@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Project: fahmm (Fah Meeting Minutes), a free, open-source Windows desktop app with an English UI and Vietnamese-first speech recognition and minutes.
+  Source of truth for v1 requirements: docs/requirements-v1.md (FR-01..FR-39, PR-01..PR-08, AT-01..AT-11).
+  Target: Windows 10/11 x64. No required account, server, subscription, API key, or GPU.
+  Core flow: Record or import -> local transcription -> review transcript -> meeting minutes -> export.
+  New meetings default to Internal/Restricted. Audio, transcript, minutes, and meeting context stay local in this mode.
+  Never fall back from local processing to a cloud endpoint. Cloud summarization requires the user to mark the meeting as shareable and confirm each send with the destination and payload disclosed.
+  Without a local LLM, offline minutes are an extractive draft with source timestamps, not a semantic AI summary.
+  M1 is the Windows recorder (system audio + microphone, pause/stop, crash recovery); its acceptance tests are AT-01, AT-02, and AT-10.
+  Write all repository documentation, OpenSpec artifacts, and user-facing UI text in English. Preserve Vietnamese as the default transcription and minutes language.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
