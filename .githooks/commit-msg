@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+
+message_file=$1
+header=
+IFS= read -r header < "$message_file" || [ -n "$header" ]
+
+reject() {
+  printf '%s\n' \
+    'Commit message must follow Conventional Commits:' \
+    '  <type>[optional scope][!]: <description>' \
+    'Example:' \
+    '  feat(desktop): add meeting library' >&2
+  exit 1
+}
+
+case "$header" in
+  *': '*)
+    prefix=${header%%:*}
+    description=${header#*: }
+    ;;
+  *) reject ;;
+esac
+[ -n "$prefix" ] && [ -n "$description" ] || reject
+
+case "$prefix" in
+  *'!') prefix=${prefix%!} ;;
+esac
+
+case "$prefix" in
+  *'('*')')
+    type=${prefix%%(*}
+    scope=${prefix#*(}
+    scope=${scope%)}
+    case "$scope" in *[![:alnum:]./_-]*|'') reject ;; esac
+    ;;
+  *'('*|*')'*) reject ;;
+  *) type=$prefix ;;
+esac
+
+case "$type" in
+  *[!a-z0-9-]*|'') reject ;;
+esac
+
+case "$description" in
+  *[![:space:]]*) ;;
+  *) reject ;;
+esac
