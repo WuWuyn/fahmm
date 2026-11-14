@@ -32,6 +32,7 @@ class Snapshot:
     recording: Path | None
     error: str | None
     skipped_chunks: tuple[str, ...]
+    levels: dict[str, float]
 
 
 class SessionController:
@@ -44,6 +45,7 @@ class SessionController:
         self._recording: Path | None = None
         self._error: str | None = None
         self._skipped: tuple[str, ...] = ()
+        self._levels = {source: 0.0 for source in SOURCES}
         self._started_at = 0.0
         self._paused_at: float | None = None
         self._paused_total = 0.0
@@ -63,6 +65,7 @@ class SessionController:
                 self._recording,
                 self._error,
                 self._skipped,
+                dict(self._levels),
             )
 
     def _elapsed(self) -> float:
@@ -80,9 +83,11 @@ class SessionController:
                 if not any(item.id == device_id for item in available[source]):
                     raise ValueError(f"The selected {source} device is no longer available")
             self._meeting_id = self.store.create({"system": system_id, "microphone": microphone_id})
+            self.store.begin_activity(self._meeting_id, "recording")
             self._recording = None
             self._error = None
             self._skipped = ()
+            self._levels = {source: 0.0 for source in SOURCES}
             self._state = State.STARTING
             self._started_at = 0.0
             self._paused_at = None
@@ -94,9 +99,13 @@ class SessionController:
             self._gate = threading.Event()
             self._ready = {source: threading.Event() for source in SOURCES}
             self._worker = threading.Thread(
-                target=self._run_session, args=(system_id, microphone_id), daemon=True
+                target=self._run_session_guarded, args=(system_id, microphone_id), daemon=True
             )
-            self._worker.start()
+            try:
+                self._worker.start()
+            except Exception:
+                self.store.end_activity(self._meeting_id, "recording")
+                raise
             return self._meeting_id
 
     def pause(self) -> None:
@@ -105,6 +114,7 @@ class SessionController:
                 raise RuntimeError("The session is not recording")
             self._paused_at = time.monotonic()
             self._state = State.PAUSED
+            self._levels = {source: 0.0 for source in SOURCES}
             self._resume.clear()
 
     def resume(self) -> None:
@@ -125,6 +135,7 @@ class SessionController:
                 self._paused_total += time.monotonic() - self._paused_at
                 self._paused_at = None
             self._state = State.FINALIZING
+            self._levels = {source: 0.0 for source in SOURCES}
             self._stopped_at = time.monotonic()
             self._stop.set()
             self._resume.set()
@@ -137,6 +148,7 @@ class SessionController:
         with self._lock:
             if self._state in (State.STARTING, State.RECORDING, State.PAUSED, State.FINALIZING):
                 raise RuntimeError("Another session is being processed")
+            self.store.begin_activity(meeting_id, "recovery")
             self._state = State.FINALIZING
             self._meeting_id = meeting_id
             self._started_at = 0.0
@@ -144,7 +156,18 @@ class SessionController:
             self._recording = None
             self._error = None
             self._skipped = ()
-        threading.Thread(target=self._finish, args=(meeting_id,), daemon=True).start()
+            self._levels = {source: 0.0 for source in SOURCES}
+        try:
+            threading.Thread(target=self._recover_guarded, args=(meeting_id,), daemon=True).start()
+        except Exception:
+            self.store.end_activity(meeting_id, "recovery")
+            raise
+
+    def _recover_guarded(self, meeting_id: str) -> None:
+        try:
+            self._finish(meeting_id)
+        finally:
+            self.store.end_activity(meeting_id, "recovery")
 
     def wait(self, timeout: float = 10.0) -> None:
         worker = self._worker
@@ -156,11 +179,19 @@ class SessionController:
         with self._lock:
             self._error = f"{label} error: {exc}"
             self._state = State.ERROR
+            self._levels = {source: 0.0 for source in SOURCES}
             self._stopped_at = time.monotonic()
             self._stop.set()
             self._resume.set()
             self._gate.set()
             self._ready[source].set()
+
+    def _run_session_guarded(self, system_id: str, microphone_id: str) -> None:
+        meeting_id = self._meeting_id
+        try:
+            self._run_session(system_id, microphone_id)
+        finally:
+            self.store.end_activity(meeting_id, "recording")
 
     def _run_session(self, system_id: str, microphone_id: str) -> None:
         meeting_id = self._meeting_id
@@ -216,6 +247,9 @@ class SessionController:
                                 break
                             if not len(data):
                                 continue
+                            level = float(np.sqrt(np.mean(np.square(data, dtype=np.float64))))
+                            with self._lock:
+                                self._levels[source] = min(1.0, level * 6)
                             if start_frame is None:
                                 start_frame = offset
                             blocks.append(data)
@@ -240,7 +274,9 @@ class SessionController:
                 self._recording = result.path
                 self._skipped = result.skipped_chunks
                 self._state = State.COMPLETED
+                self._levels = {source: 0.0 for source in SOURCES}
         except Exception as exc:
             with self._lock:
                 self._error = f"Could not create the playback file: {exc}"
                 self._state = State.ERROR
+                self._levels = {source: 0.0 for source in SOURCES}

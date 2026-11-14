@@ -1,3 +1,1 @@
-from fahmm.app import main
-
-raise SystemExit(main())
+raise SystemExit("Run the desktop app from desktop/ with: npm run tauri dev")

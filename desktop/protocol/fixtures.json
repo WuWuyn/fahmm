@@ -1,0 +1,18 @@
+{
+  "valid": [
+    { "v": 1, "kind": "request", "id": "r-1", "op": "session.hello", "params": { "versions": [1] } },
+    { "v": 1, "kind": "request", "id": "r-2", "op": "system.health", "params": {} },
+    { "v": 1, "kind": "response", "id": "r-1", "op": "session.hello", "result": { "selectedVersion": 1, "capabilities": ["system.health"] } },
+    { "v": 1, "kind": "event", "event": "job.progress", "jobId": "job_1", "data": { "state": "running", "progress": 0.5 } },
+    { "v": 1, "kind": "error", "id": "r-3", "error": { "code": "INVALID_REQUEST", "message": "Invalid request" } }
+  ],
+  "invalid": [
+    { "v": 2, "kind": "request", "id": "r-1", "op": "system.health", "params": {} },
+    { "v": 1, "kind": "request", "id": "r-1", "op": "unknown.run", "params": {} },
+    { "v": 1, "kind": "request", "id": "bad id", "op": "system.health", "params": {} },
+    { "v": 1, "kind": "request", "id": "r-2", "op": "session.hello", "params": { "versions": ["1"] } },
+    { "v": 1, "kind": "event", "event": "job.progress", "jobId": "job_1", "data": { "state": "running", "progress": "half" } },
+    { "v": 1, "kind": "error", "id": "r-3", "error": { "code": "RAW_EXCEPTION", "message": "secret" } }
+  ],
+  "malformed": "{\"v\":1,"
+}

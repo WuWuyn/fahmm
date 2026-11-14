@@ -11,7 +11,7 @@ from pathlib import Path
 def forbidden(*args, **kwargs):
     raise AssertionError('network on import')
 socket.socket.connect = forbidden
-import fahmm.audio, fahmm.controller, fahmm.storage, fahmm.ui, fahmm.app
+import fahmm.audio, fahmm.controller, fahmm.storage, legacy.qt.ui, legacy.qt.app
 assert 'soundcard' not in sys.modules
 assert not (Path(__import__('os').environ['LOCALAPPDATA']) / 'fahmm').exists()
 """

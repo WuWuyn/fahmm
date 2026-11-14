@@ -1,0 +1,9 @@
+# Offline ASR boundary
+
+fahmm separates model acquisition from meeting processing. **Download** on the Models screen is the only M2 action that contacts Hugging Face. That request contains a repository ID and pinned revision, never a meeting ID, audio, transcript, or minutes. Opening Models and selecting an installed model are offline operations.
+
+Transcription accepts an audio file and a validated **local model directory**. It never accepts a Hugging Face repository ID as a model path. The worker sets `HF_HUB_OFFLINE=1`, loads faster-whisper with `local_files_only=True`, and requires a local `tokenizer.json` before loading to prevent tokenizer fallback downloads. Decoding and inference run in a spawned process on the CPU; there is no cloud ASR fallback or API key requirement. The parent process receives only local segment/status messages and writes transcript JSON in the meeting folder.
+
+The integration smoke test `uv run pytest tests/test_asr.py -q` starts a Windows worker with its socket connection method blocked and `OPENAI_API_KEY` and `HF_TOKEN` removed. It exercises model and tokenizer loading, FLAC decoding, and a complete transcription. The test uses the installed Base model, or `FAHMM_TEST_MODEL_DIR` when set. The small [JFK speech fixture](https://github.com/SYSTRAN/faster-whisper/blob/master/tests/data/jfk.flac) is from the faster-whisper test suite; it contains no meeting content. An absent model skips this optional integration test. M2 acceptance additionally requires a Vietnamese sample; English fixture success alone does not establish Vietnamese quality.
+
+The privacy promise covers network requests controlled by fahmm. The source audio and transcript stay under `%LOCALAPPDATA%/fahmm/meetings`. Technical errors must not log transcript text or API secrets.

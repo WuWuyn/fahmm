@@ -6,19 +6,26 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [
+    "av>=14,<19",
+    "ctranslate2>=4.9.0",
+    "faster-whisper>=1.2.1",
+    "huggingface-hub>=2.4.0",
     "numpy>=2.0,<3",
-    "PySide6>=6.8,<7",
+    "openai>=2,<3",
     "SoundCard>=0.4,<0.5",
 ]
 
-[project.scripts]
-fahmm = "fahmm.app:main"
+[project.optional-dependencies]
+legacy-qt = ["PySide6>=6.8,<7"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+build = [
+    "pyinstaller>=6.16,<7",
+]
 dev = ["pytest>=8,<10", "ruff>=0.9"]
 
 [tool.ruff]

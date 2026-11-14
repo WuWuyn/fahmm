@@ -8,8 +8,9 @@ from PySide6.QtWidgets import QApplication
 from test_controller import FakeCapture
 
 from fahmm.controller import SessionController, State
+from fahmm.models import ModelManager
 from fahmm.storage import MeetingStore
-from fahmm.ui import RecorderWindow
+from legacy.qt.ui import RecorderWindow
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -79,4 +80,19 @@ def test_ui_offers_recovery_and_displays_result(tmp_path):
     window._tick()
     assert "recording.wav" in window.result_label.text()
     assert window.recovery_list.count() == 0
+    window.close()
+
+
+def test_four_screen_navigation_preserves_recorder_state(tmp_path):
+    _app()
+    controller = SessionController(FakeCapture(), MeetingStore(tmp_path / "meetings"))
+    window = RecorderWindow(controller, ModelManager(tmp_path / "models"))
+    window.show()
+    assert list(window.nav_buttons) == ["Recorder", "Meetings", "Models", "Settings"]
+    assert window.nav_buttons["Recorder"].isChecked()
+    for name in ("Meetings", "Models", "Settings", "Recorder"):
+        window.switch_to(name)
+        assert window.nav_buttons[name].isChecked()
+        assert window.stack.currentWidget() is getattr(window, f"{name.lower()}_page")
+    assert window.record_button.isEnabled()
     window.close()

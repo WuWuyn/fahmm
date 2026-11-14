@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "maxFrameBytes": 1048576,
+  "requestIdPattern": "^[A-Za-z0-9_-]{1,64}$",
+  "operations": {
+    "session.hello": {
+      "params": { "versions": "integer[]" },
+      "result": { "selectedVersion": "integer", "capabilities": "string[]" }
+    },
+    "system.health": {
+      "params": {},
+      "result": { "status": "string" }
+    },
+    "recording.devices": {
+      "params": {},
+      "result": { "system": "object[]", "microphone": "object[]" }
+    },
+    "recording.start": {
+      "params": { "systemId": "string", "microphoneId": "string" },
+      "result": { "meetingId": "string" }
+    },
+    "recording.pause": {
+      "params": {},
+      "result": { "state": "string" }
+    },
+    "recording.resume": {
+      "params": {},
+      "result": { "state": "string" }
+    },
+    "recording.stop": {
+      "params": {},
+      "result": { "state": "string" }
+    },
+    "recording.snapshot": {
+      "params": {},
+      "result": { "state": "string", "seconds": "number", "meetingId": "string?", "error": "string?", "skippedChunks": "integer", "levels": "object" }
+    },
+    "recording.incomplete": {
+      "params": {},
+      "result": { "meetings": "object[]" }
+    },
+    "recording.recover": {
+      "params": { "meetingId": "string" },
+      "result": { "state": "string" }
+    },
+    "meeting.list": {
+      "params": {},
+      "result": { "meetings": "object[]" }
+    },
+    "meeting.detail": {
+      "params": { "meetingId": "string" },
+      "result": { "meeting": "object" }
+    },
+    "meeting.rename": {
+      "params": { "meetingId": "string", "name": "string" },
+      "result": { "meeting": "object" }
+    },
+    "meeting.privacy": {
+      "params": { "meetingId": "string", "mode": "string" },
+      "result": { "meeting": "object" }
+    },
+    "meeting.import": {
+      "params": { "nativePath": "string" },
+      "result": { "meetingId": "string" }
+    },
+    "meeting.delete": {
+      "params": { "meetingId": "string" },
+      "result": { "deleted": "boolean" }
+    },
+    "meeting.cleanupList": {
+      "params": {},
+      "result": { "deletions": "string[]", "imports": "string[]" }
+    },
+    "meeting.retryCleanup": {
+      "params": { "meetingId": "string" },
+      "result": { "cleaned": "boolean" }
+    },
+    "meeting.cleanImport": {
+      "params": { "meetingId": "string" },
+      "result": { "cleaned": "boolean" }
+    },
+    "transcript.list": {
+      "params": { "meetingId": "string" },
+      "result": { "runs": "object[]", "activeRunId": "string?" }
+    },
+    "transcript.read": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "run": "object" }
+    },
+    "transcript.saveEdits": {
+      "params": { "meetingId": "string", "runId": "string", "edits": "object" },
+      "result": { "saved": "boolean" }
+    },
+    "transcript.select": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "activeRunId": "string" }
+    },
+    "minutes.list": {
+      "params": { "meetingId": "string" },
+      "result": { "versions": "object[]", "activeVersionId": "string?" }
+    },
+    "minutes.read": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "version": "object" }
+    },
+    "minutes.renderBody": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "markdown": "string" }
+    },
+    "minutes.edit": {
+      "params": { "meetingId": "string", "versionId": "string", "content": "object" },
+      "result": { "versionId": "string" }
+    },
+    "minutes.select": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "activeVersionId": "string" }
+    },
+    "minutes.approve": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "reviewState": "string" }
+    },
+    "minutes.template": {
+      "params": { "meetingId": "string" },
+      "result": { "template": "object" }
+    },
+    "minutes.saveTemplate": {
+      "params": { "meetingId": "string", "template": "object" },
+      "result": { "saved": "boolean" }
+    },
+    "model.catalog": {
+      "params": {},
+      "result": { "choices": "object[]", "installed": "object[]", "selectedId": "string?" }
+    },
+    "model.select": {
+      "params": { "modelId": "string" },
+      "result": { "selectedId": "string" }
+    },
+    "model.install": {
+      "params": { "repository": "string" },
+      "result": { "jobId": "string" }
+    },
+    "model.installStatus": {
+      "params": {},
+      "result": { "jobId": "string?", "state": "string", "stage": "string", "progress": "number?", "modelId": "string?", "error": "string?" }
+    },
+    "model.delete": {
+      "params": { "modelId": "string" },
+      "result": { "deleted": "boolean" }
+    },
+    "asr.start": {
+      "params": { "meetingId": "string", "modelId": "string", "language": "string" },
+      "result": { "runId": "string" }
+    },
+    "asr.cancel": {
+      "params": {},
+      "result": { "state": "string" }
+    },
+    "asr.retry": {
+      "params": {},
+      "result": { "runId": "string" }
+    },
+    "asr.status": {
+      "params": {},
+      "result": { "state": "string", "meetingId": "string?", "runId": "string?", "progress": "number?", "segmentCount": "integer", "error": "string?" }
+    },
+    "minutes.generateOffline": {
+      "params": { "meetingId": "string", "runId": "string?" },
+      "result": { "versionId": "string" }
+    },
+    "cloud.preview": {
+      "params": { "meetingId": "string", "profileId": "string", "selectedIds": "integer[]", "reviewedIds": "integer[]", "prompt": "string", "maxTokens": "integer" },
+      "result": { "previewId": "string", "preview": "object" }
+    },
+    "cloud.cancel": {
+      "params": { "previewId": "string" },
+      "result": { "cancelled": "boolean" }
+    },
+    "cloud.confirm": {
+      "params": { "previewId": "string", "accepted": "boolean" },
+      "result": { "confirmed": "boolean" }
+    },
+    "cloud.send": {
+      "params": { "previewId": "string" },
+      "result": { "versionId": "string" }
+    },
+    "provider.list": {
+      "params": {},
+      "result": { "profiles": "object[]" }
+    },
+    "provider.save": {
+      "params": { "name": "string", "baseUrl": "string", "modelId": "string", "timeoutSeconds": "number", "profileId": "string?", "apiKey": "string?" },
+      "result": { "profile": "object" }
+    },
+    "provider.delete": {
+      "params": { "profileId": "string" },
+      "result": { "deleted": "boolean" }
+    },
+    "export.minutesMarkdown": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "markdown": "string" }
+    },
+    "export.transcriptText": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "text": "string" }
+    },
+    "export.writeMinutes": {
+      "params": { "meetingId": "string", "versionId": "string", "nativePath": "string", "overwrite": "boolean" },
+      "result": { "saved": "boolean", "displayName": "string" }
+    },
+    "export.writeTranscript": {
+      "params": { "meetingId": "string", "runId": "string", "nativePath": "string", "overwrite": "boolean" },
+      "result": { "saved": "boolean", "displayName": "string" }
+    },
+    "media.ticket": {
+      "params": { "meetingId": "string" },
+      "result": { "ticket": "string", "contentType": "string" }
+    },
+    "media.resolve": {
+      "params": { "meetingId": "string", "ticket": "string" },
+      "result": { "nativePath": "string", "contentType": "string", "size": "integer" }
+    },
+    "media.peaks": {
+      "params": { "meetingId": "string", "bins": "integer" },
+      "result": { "seconds": "number", "peaks": "number[]" }
+    },
+    "media.fallback": {
+      "params": { "meetingId": "string" },
+      "result": { "ticket": "string", "contentType": "string" }
+    }
+  },
+  "events": {
+    "job.progress": { "state": "string", "progress": "number" },
+    "session.status": { "state": "string" }
+  },
+  "errorCodes": [
+    "INVALID_REQUEST",
+    "UNSUPPORTED_VERSION",
+    "UNSUPPORTED_OPERATION",
+    "BACKEND_UNAVAILABLE",
+    "OPERATION_FAILED"
+  ]
+}
