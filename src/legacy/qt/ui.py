@@ -15,11 +15,18 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from fahmm.cloud_minutes import CloudMinutesService
 from fahmm.controller import SessionController, State
+from fahmm.models import ModelManager
+from fahmm.providers import ProviderProfiles
+from legacy.qt.meetings_page import MeetingsPage
+from legacy.qt.models_page import ModelsPage
+from legacy.qt.settings_page import SettingsPage
 
 STATUS_TEXT = {
     State.IDLE: "Ready to record",
@@ -33,14 +40,20 @@ STATUS_TEXT = {
 
 
 class RecorderWindow(QMainWindow):
-    def __init__(self, controller: SessionController) -> None:
+    def __init__(
+        self, controller: SessionController, model_manager: ModelManager | None = None,
+        provider_profiles: ProviderProfiles | None = None,
+        cloud_service: CloudMinutesService | None = None,
+    ) -> None:
         super().__init__()
         self.controller = controller
+        self.model_manager = model_manager or ModelManager()
+        self.provider_profiles = provider_profiles or ProviderProfiles()
         self._last_error: str | None = None
         self._last_state: State | None = None
         self._close_requested = False
         self.setWindowTitle("fahmm — Fah Meeting Minutes")
-        self.resize(760, 580)
+        self.resize(920, 700)
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -98,7 +111,35 @@ class RecorderWindow(QMainWindow):
         self.result_label.setWordWrap(True)
         layout.addWidget(self.result_label)
         layout.addStretch()
-        self.setCentralWidget(root)
+        self.recorder_page = root
+        self.meetings_page = MeetingsPage(
+            self.controller.store, self.model_manager, profiles=self.provider_profiles,
+            cloud_service=cloud_service,
+        )
+        self.models_page = ModelsPage(self.model_manager)
+        self.settings_page = SettingsPage(self.provider_profiles)
+
+        shell = QWidget()
+        shell_layout = QVBoxLayout(shell)
+        navigation = QHBoxLayout()
+        self.stack = QStackedWidget()
+        self.nav_buttons: dict[str, QPushButton] = {}
+        for name, page in (
+            ("Recorder", self.recorder_page),
+            ("Meetings", self.meetings_page),
+            ("Models", self.models_page),
+            ("Settings", self.settings_page),
+        ):
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.clicked.connect(lambda checked=False, target=name: self.switch_to(target))
+            navigation.addWidget(button)
+            self.nav_buttons[name] = button
+            self.stack.addWidget(page)
+        shell_layout.addLayout(navigation)
+        shell_layout.addWidget(self.stack)
+        self.setCentralWidget(shell)
+        self.switch_to("Recorder")
 
         QShortcut(QKeySequence("Ctrl+R"), self, activated=self._on_record)
         QShortcut(QKeySequence("Space"), self, activated=self._on_pause)
@@ -109,6 +150,18 @@ class RecorderWindow(QMainWindow):
         self.refresh_devices()
         self.refresh_recovery()
         self._tick()
+
+    def switch_to(self, name: str) -> None:
+        names = tuple(self.nav_buttons)
+        if name not in self.nav_buttons:
+            raise ValueError("Unknown screen")
+        self.stack.setCurrentIndex(names.index(name))
+        for label, button in self.nav_buttons.items():
+            button.setChecked(label == name)
+        if name == "Meetings":
+            self.meetings_page.refresh_models()
+            self.meetings_page.minutes_panel.refresh_providers()
+            self.meetings_page.refresh()
 
     def refresh_devices(self) -> None:
         try:

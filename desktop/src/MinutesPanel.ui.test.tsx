@@ -1,0 +1,93 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MinutesPanel } from "@/features/minutes/MinutesPanel";
+import { bridgeCall, exportSaved } from "@/shared/bridge/client";
+
+vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportSaved: vi.fn() }));
+
+let versionId: string | null;
+let previewCount: number;
+beforeEach(() => {
+  versionId = null; previewCount = 0;
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    switch (operation) {
+      case "minutes.list": return { versions: versionId ? [{ version_id: versionId, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: "extractive" }] : [], activeVersionId: versionId };
+      case "minutes.read": return { version: { manifest: { version_id: versionId, run_id: "r".repeat(32), created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: "extractive" }, content: { user_text: "# Bản nháp" } } };
+      case "minutes.renderBody": return { markdown: "# Bản nháp" };
+      case "minutes.template": return { template: { headings: { title: "Tiêu đề" }, guidance: "Review sources", topic_limit: 5 } };
+      case "provider.list": return { profiles: [{ id: "p".repeat(32), name: "Provider", model_id: "model", hasKey: false }] };
+      case "transcript.list": return { activeRunId: "r".repeat(32) };
+      case "transcript.read": return { run: { working: [{ id: 1, start: 0, end: 1, text: "Xin chào" }] } };
+      case "minutes.generateOffline": versionId = "m".repeat(32); return { versionId };
+      case "cloud.preview": previewCount += 1; return { previewId: `preview-${previewCount}`, preview: {
+        destination_hostname: "example.org", warning: "Content leaves this device", transcript: "Xin chào",
+        prompt: "Viết biên bản", token_limit: 2000, request_body: { model: "model", messages: [{ content: "Xin chào" }] },
+      } };
+      case "cloud.cancel": return { cancelled: true };
+      case "cloud.confirm": return { confirmed: true };
+      case "cloud.send": versionId = "c".repeat(32); return { versionId };
+      default: throw new Error(`Unexpected operation ${operation}`);
+    }
+  });
+});
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+
+it("keeps Restricted meetings offline and labels drafts unverified", async () => {
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByRole("button", { name: "Offline draft" });
+  await user.click(screen.getByRole("button", { name: "Offline draft" }));
+  await waitFor(() => expect(screen.getByText("unverified")).toBeTruthy());
+  expect(screen.getByRole("button", { name: "Preview provider payload" }).hasAttribute("disabled")).toBe(true);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "cloud.preview")).toBe(false);
+});
+
+it("cancels a preview and requires a fresh confirmation for the next send", async () => {
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="cloud_permitted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByText(/0\.0s · Xin chào/);
+  const boxes = screen.getAllByRole("checkbox");
+  await user.click(boxes[0]); await user.click(boxes[1]);
+  await user.click(screen.getByRole("button", { name: "Preview provider payload" }));
+  await screen.findByRole("dialog", { name: "Review provider send" });
+  expect(screen.getByText(/Exact request body/)).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "cloud.send")).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Preview provider payload" }));
+  await user.click(screen.getByRole("button", { name: "Confirm and send" }));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "cloud.send" && params?.previewId === "preview-2")).toBe(true));
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "cloud.cancel" && params?.previewId === "preview-1")).toBe(true);
+});
+
+it("copies the saved Markdown only after warning about dirty edits", async () => {
+  versionId = "m".repeat(32);
+  const user = userEvent.setup();
+  const copy = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+  vi.stubGlobal("confirm", vi.fn(() => false));
+  vi.mocked(bridgeCall).mockImplementationOnce(async () => ({
+    versions: [{ version_id: versionId, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: "extractive" }],
+    activeVersionId: versionId,
+  }));
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByRole("button", { name: "Edit" });
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.clear(screen.getByRole("textbox", { name: "Edit minutes Markdown" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), "Unsaved text");
+  await user.click(screen.getByRole("button", { name: "Copy Markdown" }));
+  expect(copy).not.toHaveBeenCalled();
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "export.minutesMarkdown")).toBe(false);
+  vi.stubGlobal("confirm", vi.fn(() => true));
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "export.minutesMarkdown") return { markdown: "Saved Markdown" };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  await user.click(screen.getByRole("button", { name: "Copy Markdown" }));
+  await waitFor(() => expect(copy).toHaveBeenCalledWith("Saved Markdown"));
+  expect(screen.queryByText("Unsaved edits")).toBeNull();
+  expect(vi.mocked(exportSaved)).not.toHaveBeenCalled();
+});
