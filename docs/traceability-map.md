@@ -1,29 +1,27 @@
-# Traceability: requirement → code → evidence → gate
+# Flow 1/2 traceability: requirement → code → test → acceptance
 
-This is a **review map at commit c44d55d82b49da9c88efdfe4b1f889e7777e7c4b**, not a test execution report. Paths are relative to the repository root. Update the map whenever source ownership or requirements change.
+Engineering review: Codex, 15 November 2026 (Asia/Bangkok). Code anchor: `7c8ede3` (`fix(minutes): label extractive drafts and action suggestions`). This map covers every FR-01–39 and AT-01–11 in `docs/requirements-v1.md`. The separate `docs/flow12-review-baseline.md` preserves the historical `c44d55d` review. A code path or automated test in this table is not a manual gate acceptance.
 
-| Requirements / acceptance | Implementation owner | Existing tests or report | Fresh verification needed | Gate |
-| --- | --- | --- | --- | --- |
-| FR-01–04, FR-06; AT-01/02/10 | src/fahmm/audio.py, controller.py, storage.py; desktop/src/features/recorder/Recorder.tsx | docs/m1-verification.md; controller/storage fake-adapter suite | Permitted 20-min hardware capture with **audible** system+mic; real pause gap; kill/recover; no other meeting loss | G1 |
-| FR-05 | src/fahmm/media.py; meeting import bridge and native Rust dialog | M2/Tauri service and UI regression docs | Four formats, bad input, native Cancel, no unintended recording or file grants | G2 |
-| FR-08–12; AT-03 | src/fahmm/asr.py, asr_jobs.py, asr_worker.py, transcripts.py; desktop meetings/transcript UI | tests/test_at03.py; docs/m2-verification.md | Exact Windows commit, blocked-network 30-min run, timestamps, progress, Cancel/Retry, working/original edit/reopen, audio timestamp seek | G2 |
-| FR-13 (P1) | ASR/transcript enhancement; not part of accepted v1 core | No P0 pass claimed | Dictionary/SRT requirements only if scheduled as separately scoped change | Future |
-| FR-14–19; AT-04 | src/fahmm/models.py; Models screen/bridge | scripts/verify_at04.py; docs/m2-verification.md | Explicit download, revision/license, offline cache, incompatibility rejection, safe deletion, resource warnings | G2 |
-| FR-20–26; AT-05, AT-09 | src/fahmm/offline_minutes.py, minutes_store.py; minutes UI | tests/test_at05.py, test_at09.py; docs/m3-verification.md | Source links, unknown fields, unverified draft, preserved approval, no local semantic-AI mislabeling | G3 |
-| FR-27–33; AT-06/07/08 | src/fahmm/cloud_minutes.py, providers.py, provider_transport.py; bridge and minutes UI | tests/test_at06_08.py; docs/m3-verification.md | Restricted direct-bridge block; payload preview and Cancel; one-time authorization; stale/replay rejection; secret-safe failure | G3 |
-| FR-34–38; AT-11 | src/fahmm/storage.py, library.py, export/deletion services; native Rust dialogs; Meetings UI | M4/Tauri verification documents | Reopen/export/confirm deletion; old data integrity; clean packaged Windows test | G0/G6 |
-| FR-39 (P1) | Future export, search and language capabilities | No current v1 P0 promise | Scope/approve separately before enabling UI claims | Future |
-| Independent tracked action items | No current dedicated task entity; actions are a minutes-version section | Not applicable | New OpenSpec change with stable IDs, owner/date/status, review/source versions, deletion and migration | G4 |
-| End-to-end real meeting | All domains above | Historical controlled tests are not equivalent | Real devices + reviewed transcript + approved minutes; tracked task required only when advertised | G5 |
-| Windows release | Tauri package/sidecar and distribution | docs/project-status.md and docs/tauri-verification.md | Clean Win10/11, redistribution/license check, installer, model/offline/privacy | G6 |
+| Requirement / acceptance | Existing OpenSpec owner | Current code | Automated evidence | Manual acceptance still needed | Gate |
+| --- | --- | --- | --- | --- | --- |
+| FR-01–04; AT-01/02 | `windows-recorder-m1/audio-recording`; `flow1-acceptance` | `src/fahmm/audio.py`, `controller.py`, `storage.py`; `desktop/src/features/recorder/Recorder.tsx` | `tests/test_audio.py`, `test_controller.py`, `test_bridge_recording.py`, `test_activity_gate.py` | Permitted 20-minute Teams/Meet; listen to remote and local speech; real Pause/Resume timing and source state | G1 |
+| FR-05 | `local-asr-m2/audio-import`; `flow1-acceptance` | `src/fahmm/media.py`; native Rust import dialog; meetings UI | `tests/test_import.py`, `test_bridge_meetings.py`, `test_media.py` | WAV/MP3/M4A/FLAC, unsupported file and native Cancel on the packaged app | G2 |
+| FR-06; AT-10 | `windows-recorder-m1/recording-recovery`; `flow1-acceptance` | `src/fahmm/storage.py`, `controller.py` | `tests/test_crash.py`, `test_storage.py`, `test_controller.py` | Kill after a committed live chunk, recover and compare another meeting | G1 |
+| FR-07 (P1) | `flow1-acceptance` signal/device scenario; no accepted v1 implementation change | Selected source and level indicators in recorder; per-source gain and mid-session switching unverified | `tests/test_audio.py`, `test_bridge_recording.py` cover controlled source behavior | Diagnose low loopback volume; scope gain/preflight work if audibility blocks AT-01 | Future/G1 if blocking |
+| FR-08–12; AT-03 | `local-asr-m2/local-transcription`, `transcript-review`; `flow1-acceptance` | `src/fahmm/asr.py`, `asr_jobs.py`, `asr_worker.py`, `transcripts.py`; transcript UI | `tests/test_asr.py`, `test_asr_jobs.py`, `test_at03.py`, `test_transcripts.py`, `test_bridge_jobs.py` | Licensed 30-minute Vietnamese audio, installed model, blocked network, Cancel/Retry, edit/reopen and timestamp coverage | G2 |
+| FR-13 (P1) | M2 future enhancement | No accepted dictionary or SRT delivery | None claimed | Separate scope and evidence if scheduled | Future |
+| FR-14–18; AT-04 | `local-asr-m2/whisper-model-management`; `flow1-acceptance` | `src/fahmm/models.py`; Models UI and bridge | `tests/test_models.py`, `test_models_page.py`; `scripts/verify_at04.py` | Opt-in download, license/revision, offline cache, incompatible repo, delete and disk failure | G2 |
+| FR-19 (P1) | M2 model management | Model metadata and resource messaging | `tests/test_models.py` | Verify RAM/GPU warning and revision on target machine | Future/G2 |
+| FR-20–25; AT-05/09 | `minutes-privacy-m3/meeting-minutes`, `meeting-privacy`; `flow2-acceptance` | `src/fahmm/offline_minutes.py`, `minutes_store.py`, `meeting_export.py`; `desktop/src/features/minutes/MinutesPanel.tsx` | `tests/test_at05.py`, `test_at09.py`, `test_offline_minutes.py`, `test_minutes_store.py`, `test_meeting_export.py` | Restricted offline draft, unknown fields, source seek, immutable approved version and honest extractive wording | G3 |
+| FR-26 (P1) | M3 future option | No local semantic LLM in v1 | None claimed | Separate local-model/internal-endpoint scope | Future |
+| FR-27–32; AT-06/07/08 | `minutes-privacy-m3/provider-profiles`, `cloud-minutes`, `meeting-privacy`; `flow2-acceptance` | `src/fahmm/cloud_minutes.py`, `providers.py`, `credentials.py`, `provider_transport.py`; bridge and minutes UI | `tests/test_at06_08.py`, `test_bridge_cloud.py`, `test_cloud_minutes.py`, `test_provider_transport.py`, `test_credentials.py` | Direct Restricted bypass denial, exact preview and one send, stale/replay rejection, timeout preservation on target build | G3 |
+| FR-33 (P1) | M3 cloud minutes | Prompt/token/preview controls in minutes UI | `tests/test_cloud_minutes_ui.py`, `test_bridge_cloud.py` | Review displayed payload against actual request | G3/Future |
+| FR-34–38; AT-11 | `release-export-cleanup-m4/meeting-export`, `meeting-deletion`, `windows-distribution`; Tauri `desktop-workflows` | `src/fahmm/storage.py`, `library.py`, `meeting_export.py`, `meeting_deletion.py`; native dialogs and Meetings UI | `tests/test_at11.py`, `test_meeting_export.py`, `test_meeting_deletion.py`, `test_library.py`; frontend/Rust tests | Reopen, external export, confirmed delete and clean packaged Windows 10/11 | G0/G6 |
+| FR-39 (P1) | Future export/search/language scope; separate `local-project-workspaces-search` proposal exists | No accepted SRT/DOCX/PDF or cross-meeting search delivery | None claimed | Implement and accept through its own change | Future |
+| PR-01–08 | `minutes-privacy-m3/meeting-privacy`; `flow2-acceptance` | Python privacy policy, cloud confirmation, OS secret store, local export/deletion | `tests/test_at05.py`, `test_at06_08.py`, `test_bridge_cloud.py`, `test_credentials.py`, `test_meeting_export.py` | Network-blocked Restricted and packaged privacy/secret audit | G3/G6 |
+| Independent managed actions | Separate `source-linked-action-items` change now exists; its tasks remain open | Minutes currently contain action suggestions, not independent task entities | Export labeling regression in `tests/test_meeting_export.py` | Product scope decision, service/bridge/UI implementation, lifecycle tests and user review | G4 |
+| Whole journey / release | `v1-recording-release-acceptance`; `flow12-quality-gates` | All domains above | Per-commit G0 logs in `docs/evidence/` and local `.build/flow12-g0/` | Authorized meeting through export; clean Windows 10 and 11; redistribution and owner sign-off | G5/G6 |
 
-## Review sequence for a new PR
+## Review rule
 
-1. Mark changed files and impacted FR/AT rows; if a new capability has no row, create one.
-2. Link the relevant OpenSpec requirement and scenario before implementing behavior.
-3. Test the smallest changed service, then bridge contract, then frontend/Rust integration.
-4. Run Restricted-mode and data-preservation negative tests if any data/provider path changed.
-5. Re-run real hardware acceptance if capture, audio timing, storage or recovery changed.
-6. Attach an evidence record for the new commit; reviewer determines each affected gate's state.
-
-Do not accept a PR based solely on “125 tests passed” from a different commit. Those numbers in docs/tauri-verification.md refer to the 14 November migration verification snapshot.
+For each change, identify affected rows and rerun the matching service, bridge, frontend and Rust checks on the new code commit. Capture a separate gate record with environment and reviewer. Controlled fixtures cannot establish audible live recording, speech quality across accents or clean-machine packaging. The `source-linked-action-items` and `local-project-workspaces-search` changes are plans, not shipped features.

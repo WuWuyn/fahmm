@@ -4,11 +4,11 @@ Check a task only when the named evidence exists for the **current target commit
 
 ## 0. Adopt the quality-gate policy (G0)
 
-- [ ] 0.1 Review requirements-v1.md FR-01–39 and AT-01–11 against the existing M1/M2/M3/Tauri specs; create a traceability map of requirement → code → test → manual acceptance. Evidence: reviewed mapping, commit SHA and reviewer.
-- [ ] 0.2 Re-run full Python tests and lint on the target Windows commit; record command, exact pass/skip counts, logs and environment. Evidence: a completed gate-evidence record, not a copied status report.
-- [ ] 0.3 Re-run frontend tests/build and Rust tests with the same protocol version; record test output and build checks. Evidence: passing artifacts and protocol fixture results.
-- [ ] 0.4 Verify malformed/stale/oversized IPC requests, unauthorized operations, sidecar loss, restart and no mutating auto-replay. Evidence: negative tests at frontend, Rust and Python boundaries.
-- [ ] 0.5 Record release/PR checklist ownership, mandatory gate criteria, exception policy and reviewer sign-off rules. Evidence: reviewed gate records stored outside any sensitive user-data directory.
+- [x] 0.1 Review requirements-v1.md FR-01–39 and AT-01–11 against the existing M1/M2/M3/Tauri specs; create a traceability map of requirement → code → test → manual acceptance. Evidence: reviewed mapping, commit SHA and reviewer.
+- [x] 0.2 Re-run full Python tests and lint on the target Windows commit; record command, exact pass/skip counts, logs and environment. Evidence: a completed gate-evidence record, not a copied status report.
+- [x] 0.3 Re-run frontend tests/build and Rust tests with the same protocol version; record test output and build checks. Evidence: passing artifacts and protocol fixture results.
+- [x] 0.4 Verify malformed/stale/oversized IPC requests, unauthorized operations, sidecar loss, restart and no mutating auto-replay. Evidence: negative tests at frontend, Rust and Python boundaries.
+- [x] 0.5 Record release/PR checklist ownership, mandatory gate criteria, exception policy and reviewer sign-off rules. Evidence: reviewed gate records stored outside any sensitive user-data directory.
 
 ## 1. Finish real-device Flow 1 recording acceptance (G1)
 
