@@ -26,7 +26,7 @@ fahmm (Fah Meeting Minutes) records meetings, transcribes speech, and helps writ
 
 **In scope for v1 (P0):**
 
-- Windows desktop app with an English interface and Vietnamese-first speech processing.
+- Windows desktop app with English and Vietnamese interfaces and Vietnamese-first speech processing. English remains the initial interface language until the user switches it.
 - Simultaneous system audio and microphone recording; Record, Pause/Resume, Stop; local files.
 - Import of common audio formats.
 - Local Whisper transcription after Stop, with timestamps and a previously downloaded Hugging Face model.
@@ -155,8 +155,8 @@ Do not assume every OpenAI-compatible provider supports JSON Schema, streaming, 
 | FR-35 | P0 | List meetings by time, name, and status; reopen them for playback, edits, and reruns. |
 | FR-36 | P0 | Export minutes.md and transcript.txt and copy Markdown to the clipboard. |
 | FR-37 | P0 | Delete meeting data and temporary files with confirmation; never push them to a cloud account automatically. |
-| FR-38 | P0 | Use an English UI with Recorder, Meetings, Models, and Settings as the only top-level screens. |
-| FR-39 | P1 | Add SRT/DOCX/PDF export, local transcript search, and additional UI languages. |
+| FR-38 | P0 | Use an English-default UI with a persistent Vietnamese/English switch and Recorder, Meetings, Models, and Settings as the only top-level screens. |
+| FR-39 | P1 | Add SRT/DOCX/PDF export, local transcript search, and additional UI languages beyond English and Vietnamese. |
 
 V1 does not depend on a database/server. JSON metadata and the file system are the source of truth. SQLite can be added if search or history management becomes complex.
 
@@ -167,7 +167,7 @@ V1 does not depend on a database/server. JSON metadata and the file system are t
 - **Maintainability:** Use adapters for AudioCapture, ASRBackend, and SummarizerProvider so libraries can change without rewriting the UI.
 - **Packaging:** Provide a Windows installer or portable build with a checksum and clear instructions; end users must not need to install Python manually.
 - **Observability:** Log only technical events with sensitive information removed; viewing logs must never expose transcripts/audio.
-- **Accessibility:** Support keyboard control, a visible recording indicator, and clear English error messages.
+- **Accessibility:** Support keyboard control, a visible recording indicator, and clear interface error messages in the selected language; retain technical details when needed for diagnosis.
 - **Cost:** Local recording/STT are free to use; API summarization may cost money only when a user configures and invokes a provider.
 - **Licensing:** Aim for MIT/Apache-2.0 application code after reviewing dependency and model licenses.
 

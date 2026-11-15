@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDate, formatDateTime, useT } from "@/shared/i18n";
+import { useUIStore } from "@/shared/uiStore";
 
 type Meeting = {
   id: string; name: string; created_at: string; source_kind: string;
@@ -15,6 +17,8 @@ type Meeting = {
 };
 
 export function Meetings({ backendReady }: { backendReady: boolean }) {
+  const t = useT();
+  const language = useUIStore((state) => state.language);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [tab, setTab] = useState<"transcript" | "minutes">("transcript");
@@ -51,7 +55,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   async function deleteMeeting(meeting: Meeting) {
-    if (!window.confirm(`Delete '${meeting.name}' and its fahmm audio, transcripts, minutes, and metadata? This cannot be undone. Exports and backups remain.`)) return;
+    if (!window.confirm(t("Delete '{name}' and its fahmm audio, transcripts, minutes, and metadata? This cannot be undone. Exports and backups remain.", { name: meeting.name }))) return;
     setMessage("");
     try { await bridgeCall("meeting.delete", { meetingId: meeting.id }); await refresh(); await refreshCleanup();
       setMessage("Meeting data deleted locally."); }
@@ -59,7 +63,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   async function renameMeeting(meeting: Meeting) {
-    const name = window.prompt("Meeting name", meeting.name)?.trim();
+    const name = window.prompt(t("Meeting name"), meeting.name)?.trim();
     if (!name || name === meeting.name) return;
     try { await bridgeCall("meeting.rename", { meetingId: meeting.id, name });
       await refresh(); setMessage("Meeting renamed locally."); }
@@ -67,7 +71,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   async function clean(kind: "deletion" | "import", meetingId: string) {
-    if (kind === "import" && !window.confirm(`Clean abandoned import ${meetingId}? The original source file remains.`)) return;
+    if (kind === "import" && !window.confirm(t("Clean abandoned import {id}? The original source file remains.", { id: meetingId }))) return;
     try { await bridgeCall(kind === "deletion" ? "meeting.retryCleanup" : "meeting.cleanImport", { meetingId });
       await refreshCleanup(); setMessage(kind === "deletion" ? "Incomplete deletion cleaned." : "Abandoned import cleaned."); }
     catch { setMessage("Storage cleanup could not finish. Release file locks and retry."); await refreshCleanup(); }
@@ -76,35 +80,35 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   const selected = meetings.find((meeting) => meeting.id === selectedId);
   const seek = (seconds: number) => setSeekTo({ seconds, nonce: Date.now() });
   return <section className="page meetings-page" aria-labelledby="meetings-heading">
-    <div className="page-heading"><div><div className="eyebrow">LIBRARY</div><h1 id="meetings-heading">Meetings</h1>
-      <p>Recordings and documents stay in your local meeting library.</p></div>
-      <Button disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={16} /> Import audio</Button>
+    <div className="page-heading"><div><div className="eyebrow">{t("LIBRARY")}</div><h1 id="meetings-heading">{t("Meetings")}</h1>
+      <p>{t("Recordings and documents stay in your local meeting library.")}</p></div>
+      <Button disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={16} /> {t("Import audio")}</Button>
     </div>
-    {message && <div className="alert" role="alert">{message}</div>}
-    <div className="meetings-layout"><Card className="panel meeting-list" role="complementary" aria-label="Saved meetings">
-      <div className="panel-heading"><h2>Saved meetings</h2><span className="count-badge">{meetings.length}</span></div>
-      {!backendReady && meetings.length === 0 && <p>Connect the local backend to load meetings.</p>}
-      {backendReady && loading && <p>Loading meetings…</p>}
-      {backendReady && !loading && meetings.length === 0 && <div className="library-empty"><FolderOpen size={26} /><p>No meetings yet. Record or import audio to begin.</p></div>}
+    {message && <div className="alert" role="alert">{t(message)}</div>}
+    <div className="meetings-layout"><Card className="panel meeting-list" role="complementary" aria-label={t("Saved meetings")}>
+      <div className="panel-heading"><h2>{t("Saved meetings")}</h2><span className="count-badge">{meetings.length}</span></div>
+      {!backendReady && meetings.length === 0 && <p>{t("Connect the local backend to load meetings.")}</p>}
+      {backendReady && loading && <p>{t("Loading meetings…")}</p>}
+      {backendReady && !loading && meetings.length === 0 && <div className="library-empty"><FolderOpen size={26} /><p>{t("No meetings yet. Record or import audio to begin.")}</p></div>}
       {meetings.map((meeting) => <button key={meeting.id} className={`meeting-row${meeting.id === selectedId ? " selected" : ""}`}
         onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); }}>
         <span className="meeting-icon"><FileAudio size={17} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
-          <small>{new Date(meeting.created_at).toLocaleDateString()} · {meeting.source_kind}</small></span>
-        <Badge variant="outline" className={`meeting-privacy-label${meeting.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{meeting.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only"}</Badge>
+          <small>{formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small></span>
+        <Badge variant="outline" className={`meeting-privacy-label${meeting.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(meeting.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
       </button>)}
     </Card>
     <div className="meeting-detail">{selected ? <>
-      <div className="detail-title"><div><div className="eyebrow">MEETING</div><h2>{selected.name}</h2>
-        <p>{new Date(selected.created_at).toLocaleString()} · {selected.source_kind}</p></div>
-        <div className="detail-actions"><Badge variant="outline" className={`privacy-badge${selected.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{selected.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only"}</Badge>
-          <Button variant="ghost" size="icon-sm" aria-label={`Rename ${selected.name}`} onClick={() => void renameMeeting(selected)}><Pencil size={16} /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label={`Delete ${selected.name}`} onClick={() => void deleteMeeting(selected)}><Trash2 size={16} /></Button></div></div>
+      <div className="detail-title"><div><div className="eyebrow">{t("MEETING")}</div><h2>{selected.name}</h2>
+        <p>{formatDateTime(selected.created_at, language)} · {t(selected.source_kind)}</p></div>
+        <div className="detail-actions"><Badge variant="outline" className={`privacy-badge${selected.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(selected.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
+          <Button variant="ghost" size="icon-sm" aria-label={t("Rename {name}", { name: selected.name })} onClick={() => void renameMeeting(selected)}><Pencil size={16} /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label={t("Delete {name}", { name: selected.name })} onClick={() => void deleteMeeting(selected)}><Trash2 size={16} /></Button></div></div>
       {selected.recording_state === "completed" ? <AudioPlayer meetingId={selected.id} seekTo={seekTo} />
-        : <div className="panel audio-panel">Recover or finish this recording before playback.</div>}
+        : <div className="panel audio-panel">{t("Recover or finish this recording before playback.")}</div>}
       <Tabs value={tab} onValueChange={(value) => setTab(value as "transcript" | "minutes")}>
-        <TabsList variant="line" className="document-tabs" aria-label="Meeting documents">
-          <TabsTrigger value="transcript">Transcript</TabsTrigger>
-          <TabsTrigger value="minutes">Minutes</TabsTrigger>
+        <TabsList variant="line" className="document-tabs" aria-label={t("Meeting documents")}>
+          <TabsTrigger value="transcript">{t("Transcript")}</TabsTrigger>
+          <TabsTrigger value="minutes">{t("Minutes")}</TabsTrigger>
         </TabsList>
         <TabsContent value="transcript" className="panel document-surface"><TranscriptPanel meetingId={selected.id} onSeek={seek}
           onRunChange={() => setRunVersion((version) => version + 1)} /></TabsContent>
@@ -116,13 +120,13 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
                 .catch(() => setMessage("Could not open the source transcript."));
             }} runVersion={runVersion} /></TabsContent>
       </Tabs>
-    </> : <div className="panel detail-empty">Select a meeting to review its recording and documents.</div>}</div></div>
-    {(cleanup.deletions.length > 0 || cleanup.imports.length > 0) && <Card className="panel recovery-panel" aria-label="Storage cleanup">
-      <h2>Storage cleanup</h2><p>Retry an interrupted deletion or remove an abandoned import copy.</p>
-      {cleanup.deletions.map((id) => <div className="recovery-item" key={id}><span>Incomplete deletion {id.slice(0, 8)}</span>
-        <Button variant="secondary" onClick={() => void clean("deletion", id)}>Retry cleanup</Button></div>)}
-      {cleanup.imports.map((id) => <div className="recovery-item" key={id}><span>Abandoned import {id.slice(0, 8)}</span>
-        <Button variant="secondary" onClick={() => void clean("import", id)}>Clean import</Button></div>)}
+    </> : <div className="panel detail-empty">{t("Select a meeting to review its recording and documents.")}</div>}</div></div>
+    {(cleanup.deletions.length > 0 || cleanup.imports.length > 0) && <Card className="panel recovery-panel" aria-label={t("Storage cleanup")}>
+      <h2>{t("Storage cleanup")}</h2><p>{t("Retry an interrupted deletion or remove an abandoned import copy.")}</p>
+      {cleanup.deletions.map((id) => <div className="recovery-item" key={id}><span>{t("Incomplete deletion {id}", { id: id.slice(0, 8) })}</span>
+        <Button variant="secondary" onClick={() => void clean("deletion", id)}>{t("Retry cleanup")}</Button></div>)}
+      {cleanup.imports.map((id) => <div className="recovery-item" key={id}><span>{t("Abandoned import {id}", { id: id.slice(0, 8) })}</span>
+        <Button variant="secondary" onClick={() => void clean("import", id)}>{t("Clean import")}</Button></div>)}
     </Card>}
   </section>;
 }

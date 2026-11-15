@@ -16,7 +16,7 @@ beforeEach(() => {
   recordingState = "idle";
   localStorage.clear();
   window.location.hash = "#/recorder";
-  useUIStore.setState({ theme: "dark", sidebarCollapsed: false });
+  useUIStore.setState({ theme: "dark", language: "en", sidebarCollapsed: false });
   vi.mocked(bridgeStatus).mockResolvedValue(true);
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
@@ -34,6 +34,22 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("desktop app shell", () => {
+  it("switches between English and Vietnamese and saves the choice", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("button", { name: "Record" });
+    await user.click(screen.getByRole("button", { name: "Switch to Vietnamese" }));
+    expect(screen.getByRole("button", { name: "Ghi âm" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Cuộc họp" })).toBeTruthy();
+    expect(document.documentElement.lang).toBe("vi");
+    expect(localStorage.getItem("fahmm-language")).toBe("vi");
+    await user.click(screen.getByRole("button", { name: "Chuyển sang tiếng Anh" }));
+    expect(screen.getByRole("button", { name: "Record" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Meetings" })).toBeTruthy();
+    expect(document.documentElement.lang).toBe("en");
+    expect(localStorage.getItem("fahmm-language")).toBe("en");
+  });
+
   it("persists a readable theme and keeps navigation keyboard accessible", async () => {
     const user = userEvent.setup();
     render(<App />);
