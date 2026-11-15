@@ -231,7 +231,9 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
         {versions.map((item) => <option key={item.version_id} value={item.version_id}>{new Date(item.created_at).toLocaleString()} · {item.origin} · {item.review_state}</option>)}
       </NativeSelect></div>
     {version && <div className="review-row"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{version.manifest.review_state}</Badge>
-      <span className="hint">{version.manifest.origin === "extractive" ? "Source-linked extractive draft" : version.manifest.origin === "provider" ? "Provider draft; verify claims" : "Edited version"}</span></div>}
+      <span className="hint">{version.manifest.origin === "extractive" ? "Source-linked extractive draft; not a semantic AI summary" : version.manifest.origin === "provider" ? "Provider draft; verify claims" : "Edited version"}</span></div>}
+    {version && Array.isArray(version.content.actions) && version.content.actions.length > 0 &&
+      <p className="hint">Action entries in these minutes are suggestions, not assigned or tracked tasks.</p>}
     {!version && <div className="empty-document">Create a draft from a saved transcript.</div>}
     {version && (editing ? <Textarea className="minutes-editor" aria-label="Edit minutes Markdown" value={editBody} onChange={(event) => setEditBody(event.target.value)} />
       : <article className="markdown-body"><ReactMarkdown>{savedBody}</ReactMarkdown></article>)}

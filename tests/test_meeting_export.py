@@ -26,11 +26,27 @@ def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
     first = service.minutes_markdown(meeting_id, approved)
     second = service.minutes_markdown(meeting_id, newer)
     assert "> Review state: Approved" in first
+    assert "> Draft type: Source-linked extractive draft; not a semantic AI summary." in first
     assert "Đã thống nhất thử nghiệm." in first
     assert "[0.0s]" in first
     assert "Bản chưa duyệt" not in first
     assert "> Review state: Unverified" in second
     assert "Bản chưa duyệt" in second
+
+
+def test_export_labels_action_entries_as_suggestions(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
+    content = sample_content(run_id)
+    content["actions"] = [{
+        "task": "Kiểm tra thử nghiệm", "owner": "Chưa rõ", "due_date": "Chưa rõ",
+        "verification_status": "Chưa xác minh", "sources": [{
+            "run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0,
+        }],
+    }]
+    version = MinutesStore(meetings).save_version(meeting_id, run_id, "extractive", content, "default")
+    markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version)
+    assert "> Action entries are suggestions, not assigned or tracked tasks." in markdown
+    assert "Kiểm tra thử nghiệm" in markdown
 
 
 def test_edited_minutes_keep_labeled_underlying_sources(tmp_path):

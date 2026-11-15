@@ -127,7 +127,14 @@ class MeetingExportService:
         if state not in ("approved", "unverified"):
             raise ValueError("Unknown minutes review state")
         body = render_minutes(content).rstrip()
-        lines = [f"> Review state: {state.title()}", "", body]
+        lines = [f"> Review state: {state.title()}"]
+        if manifest["origin"] == "extractive":
+            lines.append("> Draft type: Source-linked extractive draft; not a semantic AI summary.")
+        elif manifest["origin"] == "provider":
+            lines.append("> Draft type: Provider-generated draft; verify claims against the source.")
+        if content.get("actions"):
+            lines.append("> Action entries are suggestions, not assigned or tracked tasks.")
+        lines.extend(("", body))
         if content.get("user_text") is not None:
             citations = {
                 (source["segment_id"], source["start"], source["end"])
