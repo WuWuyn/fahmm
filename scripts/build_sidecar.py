@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 from pathlib import Path
 
@@ -17,7 +17,7 @@ TRIPLE = "x86_64-pc-windows-msvc"
 
 
 def build() -> Path:
-    if sys.platform != "win32" or platform.machine().lower() not in {"amd64", "x86_64"}:
+    if sys.platform != "win32" or sysconfig.get_platform() != "win-amd64":
         raise SystemExit("Build the sidecar on Windows x64")
     BUILD.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
