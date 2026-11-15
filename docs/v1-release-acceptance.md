@@ -7,13 +7,27 @@ Status: **not accepted for public release**. Updated 15 November 2026. This reco
 | Item | Current evidence |
 | --- | --- |
 | Product under test | Tauri desktop with the bundled Python sidecar; the legacy Qt ZIP is a rollback candidate only |
-| Source revision | `c44d55d82b49da9c88efdfe4b1f889e7777e7c4b` plus uncommitted release-test changes; a fixed, committed candidate is still required |
+| Source revision | `2211d4494408bcb80897a861f256e58b42b6b698`; clean source tree at package time (`sourceDirty: false`) |
 | Development host | Windows 11 x64, build 26200; Python and build tools are installed, so this is not a clean target |
-| Internal portable candidate | `.build/release/fahmm-tauri-0.1.0-windows-x64-portable.zip`; SHA-256 `c62cc047d06e3f946b89f120d80af4dc8c3a56bcdd70ae383637ddb3a62a6b92` |
-| Installer | Not produced in this rerun: WiX and NSIS downloads failed because GitHub DNS resolution was unavailable |
+| Internal portable candidate | `.build/release/fahmm-tauri-0.1.0-windows-x64-portable.zip`; SHA-256 `535faa477ea0cbf955668a6e428b8ac9ea369d3bcb3140adb0f411225791f3d3` |
+| MSI installer | `desktop/src-tauri/target/release/bundle/msi/fahmm_0.1.0_x64_en-US.msi`; SHA-256 `e91c936cff9234948ee6a0cd5b784b284081cf69b3ee0be083f0a68179f4c606` |
+| NSIS installer | `desktop/src-tauri/target/release/bundle/nsis/fahmm_0.1.0_x64-setup.exe`; SHA-256 `005906758ebb98843de4e3551e85d20c05889cd16c7f46d79be7f5891271869a` |
 | Test operator and date | Record with each real-device or clean-machine run before closing its gate |
 
-## Development-host rerun — 15 November 2026
+## Committed candidate on the development host — 15 November 2026
+
+The sidecar and both installers were built from the clean source revision above. Tauri's full build produced MSI and NSIS after WiX and NSIS were downloaded and hash-validated outside the sandbox. The portable host was then built with `npm run tauri build -- --no-bundle` and packaged without `--allow-dirty`. All three artifacts contain the same sidecar SHA-256 `26bbc79b1e41714ac65248b4f5161751db58b0a8d7bb9f672ea2819b302ca636`.
+
+| Check | Result and scope |
+| --- | --- |
+| MSI payload and start | `msiexec /a` extracted the MSI to `.build/release/msi-admin-7483e1c2` (exit 0). It contains `fahmm-desktop.exe` and `fahmm-sidecar.exe`; the sidecar hash matches the source binary. The extracted host stayed running with sidecar processes and created `.instance.lock` under a disposable `LOCALAPPDATA`. This verifies the MSI payload start, not a full installer wizard or system registration. |
+| Portable integrity and start | SHA-256 of the ZIP and both extracted binaries matched `.zip.sha256` and `BUILD_INFO.json`; `sourceRevision` matched the commit and `sourceDirty` was false. The extracted host stayed running with sidecar processes and created `.instance.lock` under a separate disposable `LOCALAPPDATA`. |
+| Frozen local and provider path | `verify_tauri_sidecar.py --offline-only` passed import, seeded timestamped transcript, offline minutes, export, scoped deletion, media, and restart. A full run outside the sandbox passed Restricted refusal, preview Cancel, Confirm, single-use send, and restart; the loopback provider received exactly one confirmed request. Actual ASR was not run. |
+| Regressions after build | React/Vitest: 16/16; Rust: 9/9; targeted Python bridge: 5 passed, 1 Windows privilege-dependent skip; Ruff: passed. Node 24.22.1 was used for Vitest. |
+
+Locked versions in the ZIP manifest include Tauri CLI 2.12.4, Tauri Rust 2.12.5, React 19.3.1, Vite 8.3.8, faster-whisper 1.2.1, CTranslate2 4.9.0, PyAV 18.1.0, PyInstaller 6.22.3, and SoundCard 0.4.6. Build commands and binary hashes are in `BUILD_INFO.json`. The exact sidecar archive listing is [v1-sidecar-archive.txt](v1-sidecar-archive.txt): 523 entries, including 175 `.dll`/`.pyd` files and 24 files named as license or notice material. No `model.bin` or audio file appears in that listing. The native set includes PyAV/FFmpeg DLLs and `libx264`/`libx265`; redistribution obligations and notice coverage remain unresolved.
+
+## Initial development-host rerun — 15 November 2026
 
 This run used Windows 11 x64 build 26200 with development tools installed. It is **not** clean-machine or real-meeting evidence. The ZIP is an internal test candidate built from revision `c44d55d82b49da9c88efdfe4b1f889e7777e7c4b` plus uncommitted verification and packaging changes; `BUILD_INFO.json` therefore records `sourceDirty: true`. Do not distribute it as v1.
 
@@ -32,7 +46,7 @@ This run used Windows 11 x64 build 26200 with development tools installed. It is
 | Python full suite | `uv run --locked --offline --extra legacy-qt pytest -q` | Not run: offline cache lacks `pyside6-webengine` required by the legacy Qt extra. The default environment cannot collect 12 Qt UI modules without PySide6 |
 | Changed Python scripts | `uv run --locked --offline ruff check scripts/build_sidecar.py scripts/verify_tauri_sidecar.py scripts/package_tauri_portable.py` | Pass |
 
-The ZIP manifest records these locked versions: Tauri CLI 2.12.4, Tauri Rust 2.12.5, React 19.3.1, Vite 8.3.8, faster-whisper 1.2.1, CTranslate2 4.9.0, PyAV 18.1.0, PyInstaller 6.22.3, and SoundCard 0.4.6. Its binary SHA-256 values are in `BUILD_INFO.json`. For a release candidate, commit the source, rebuild both binaries, rerun the packager without `--allow-dirty`, and test the new hash on both clean Windows targets.
+That dirty-tree ZIP was superseded by the committed candidate above. Its failures and environmental constraints are retained here as regression history. The current candidate still needs the same hash tested on both clean Windows targets.
 
 ## Acceptance matrix
 
@@ -68,8 +82,8 @@ The M2 FLEURS-derived 30-minute sample is concatenated read speech. It confirms 
 | First model download, offline reuse, import/playback/timestamp | Pending | Pending | Tested model revision, supported file, source navigation |
 | Restricted packaged pipeline and no-egress check | Pending | Pending | Local ASR/minutes/export/delete result and zero content sends |
 | Provider preview/Cancel/Confirm in package | Pending | Pending | Controlled endpoint request count, no payload in this report |
-| Exact bundled native licenses and notices | Pending | Pending | Component inventory and resolved redistribution review; see [notices](third-party-notices.md) |
-| First-run and rollback instructions | Pending | Pending | Commands and paths exercised on extracted/installed candidate |
+| Exact bundled native licenses and notices | Pending | Pending | Component inventory and resolved redistribution review; see [Tauri native review](v1-native-license-review.md) |
+| First-run and rollback instructions | Pending | Pending | [Tauri first-run guide](tauri-first-run.md); checksum/extraction/start checked on the development host, full workflow and paths pending clean targets |
 
 Each pending result stays pending until its named environment and candidate hash are recorded. A defect fix requires a new artifact hash and rerun of the affected checks. The v1 release claim remains blocked while any row above is pending or fails.
 

@@ -2,7 +2,7 @@
 
 ## 1. Cố định bản ứng viên và hồ sơ nghiệm thu
 
-- [ ] 1.1 Build một bản cài đặt Tauri và một bản portable cùng sidecar từ commit đã ghi nhận; xác minh cả hai artifact khởi động được, rồi ghi hash, phiên bản dependency và lệnh build vào `docs/v1-release-acceptance.md`.
+- [x] 1.1 Build một bản cài đặt Tauri và một bản portable cùng sidecar từ commit đã ghi nhận; xác minh cả hai artifact khởi động được, rồi ghi hash, phiên bản dependency và lệnh build vào `docs/v1-release-acceptance.md`.
 - [x] 1.2 Tạo ma trận AT-01–AT-11 và giọng Bắc/giọng Nam/lời nói pha trộn trong `docs/v1-release-acceptance.md`; xác minh từng dòng phân biệt bằng chứng có kiểm soát, phần cứng thật và máy sạch, đồng thời dẫn tới báo cáo M1–M4 hoặc Tauri phụ trách.
 
 ## 2. Nghiệm thu ghi âm và lời nói trên thiết bị thật
