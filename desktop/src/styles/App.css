@@ -297,12 +297,13 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .meeting-search-empty { padding: 10px 12px; }
 .meeting-group { margin-top: 17px; }
 .meeting-group h2 { padding: 0 12px; margin-bottom: 10px; font-size: 14px; font-weight: 550; color: var(--muted); }
-.meetings-page .meeting-row { min-height: 88px; gap: 13px; padding: 13px 16px; border: 0; border-radius: 10px; }
+.meetings-page .meeting-row { min-height: 92px; gap: 13px; padding: 13px 16px; border: 0; border-radius: 10px; }
 .meetings-page .meeting-row.selected { background: color-mix(in srgb, var(--accent-strong) 68%, var(--surface)); }
 .meetings-page .meeting-row:hover { background: var(--surface-raised); }
 .meetings-page .meeting-icon { border: 0; width: 44px; height: 44px; color: var(--accent); }
 .meetings-page .meeting-row strong { font-size: 14px; font-weight: 620; }
 .meetings-page .meeting-row small { margin-top: 5px; font-size: 11px; }
+.meetings-page .meeting-row-status { margin-top: 3px; color: var(--muted); }
 .meetings-page .meeting-detail { min-width: 0; padding: 33px clamp(25px, 2.5vw, 42px) 42px; }
 .meetings-page .detail-title { margin-bottom: 23px; align-items: flex-start; }
 .detail-title-copy { min-width: 0; }

@@ -31,6 +31,7 @@ it("opens an existing offline meeting, imports audio, and navigates to saved sou
   await screen.findByText("Existing meeting", { selector: "h2" });
   expect(screen.getByText(`Player ${first.id}`)).toBeTruthy();
   expect(screen.getAllByText("Local Only")).toHaveLength(1);
+  expect(screen.getByText("Transcript ready")).toBeTruthy();
   const search = screen.getByRole("textbox", { name: "Search meetings" });
   await user.type(search, "not found");
   expect(screen.getByText("No meetings match your search.")).toBeTruthy();

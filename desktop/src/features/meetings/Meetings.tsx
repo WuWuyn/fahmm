@@ -99,6 +99,13 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
     { label: t("Today"), items: visibleMeetings.filter((meeting) => new Date(meeting.created_at).toDateString() === today) },
     { label: t("Earlier"), items: visibleMeetings.filter((meeting) => new Date(meeting.created_at).toDateString() !== today) },
   ];
+  const statusLabel = (meeting: Meeting) => {
+    if (meeting.recording_state !== "completed") return t("Recording needs attention");
+    if (meeting.processing_state === "completed") return t("Transcript ready");
+    if (meeting.processing_state === "running") return t("Transcribing…");
+    if (["error", "cancelled"].includes(meeting.processing_state)) return t("Transcription needs attention");
+    return t("Not transcribed yet");
+  };
   const seek = (seconds: number) => setSeekTo({ seconds, nonce: Date.now(), play: true });
   return <section className="page meetings-page" aria-labelledby="meetings-heading">
     <div className="meetings-layout"><aside className="meeting-list" aria-label={t("Saved meetings")}>
@@ -117,7 +124,8 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
           aria-current={meeting.id === selectedId ? "true" : undefined}
           onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
           <span className="meeting-icon"><AudioLines size={20} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
-            <small>{group.label === t("Today") ? createdTime(meeting.created_at, language) : formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small></span>
+            <small>{group.label === t("Today") ? createdTime(meeting.created_at, language) : formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small>
+            <small className="meeting-row-status">{statusLabel(meeting)}</small></span>
         </button>)}
       </div>)}
     </aside>
