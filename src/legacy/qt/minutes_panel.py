@@ -45,9 +45,13 @@ class MinutesPanel(QWidget):
     cloud_failed = Signal(str)
 
     def __init__(
-        self, store: MeetingStore, open_source: Callable[[dict, bool], None],
-        selected_segments: Callable[[], set[int]], transcript_dirty: Callable[[], bool],
-        profiles: ProviderProfiles, cloud_service: CloudMinutesService | None = None,
+        self,
+        store: MeetingStore,
+        open_source: Callable[[dict, bool], None],
+        selected_segments: Callable[[], set[int]],
+        transcript_dirty: Callable[[], bool],
+        profiles: ProviderProfiles,
+        cloud_service: CloudMinutesService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -205,10 +209,14 @@ class MinutesPanel(QWidget):
         self.version_box.blockSignals(True)
         self.version_box.clear()
         if self.meeting_id:
-            active = selected_id or self.store.metadata(self.meeting_id).get("active_minutes_version")
+            active = selected_id or self.store.metadata(self.meeting_id).get(
+                "active_minutes_version"
+            )
             for version in self.minutes.list_versions(self.meeting_id):
-                label = (f"{version['created_at'][:19]} · {version['origin']} · "
-                         f"{version['review_state']}")
+                label = (
+                    f"{version['created_at'][:19]} · {version['origin']} · "
+                    f"{version['review_state']}"
+                )
                 self.version_box.addItem(label, version["version_id"])
                 if version["version_id"] == active:
                     self.version_box.setCurrentIndex(self.version_box.count() - 1)
@@ -257,18 +265,27 @@ class MinutesPanel(QWidget):
         self.mode_box.setEnabled(has_meeting and not self._busy)
         self.offline_button.setEnabled(has_meeting and not self._busy)
         self.template_button.setEnabled(has_meeting and not self._busy)
-        self.save_button.setEnabled(has_version and self.content_edit.toPlainText() != self._loaded_text)
-        self.approve_button.setEnabled(has_version and not self.save_button.isEnabled()
-                                       and self._loaded_version["manifest"]["review_state"] != "approved")
+        self.save_button.setEnabled(
+            has_version and self.content_edit.toPlainText() != self._loaded_text
+        )
+        self.approve_button.setEnabled(
+            has_version
+            and not self.save_button.isEnabled()
+            and self._loaded_version["manifest"]["review_state"] != "approved"
+        )
         self.export_minutes_button.setEnabled(has_version and not self._busy)
         self.copy_markdown_button.setEnabled(has_version and not self._busy)
         selected = self.citation_list.currentItem() is not None
         self.open_button.setEnabled(selected)
         self.play_button.setEnabled(selected)
         can_send = (
-            has_meeting and not self._busy and self.mode_box.currentData() == "cloud_permitted"
-            and self.provider_box.count() > 0 and bool(self.selected_segments())
-            and self.review_checkbox.isChecked() and not self.transcript_dirty()
+            has_meeting
+            and not self._busy
+            and self.mode_box.currentData() == "cloud_permitted"
+            and self.provider_box.count() > 0
+            and bool(self.selected_segments())
+            and self.review_checkbox.isChecked()
+            and not self.transcript_dirty()
         )
         self.cloud_button.setEnabled(can_send)
         self.retry_button.setEnabled(can_send)
@@ -279,9 +296,12 @@ class MinutesPanel(QWidget):
         try:
             selected = self.selected_segments()
             snapshot = self.cloud.prepare(
-                self.meeting_id, self.provider_box.currentData(), selected,
+                self.meeting_id,
+                self.provider_box.currentData(),
+                selected,
                 selected if self.review_checkbox.isChecked() else set(),
-                prompt=self.prompt_edit.toPlainText(), max_tokens=self.token_spin.value(),
+                prompt=self.prompt_edit.toPlainText(),
+                max_tokens=self.token_spin.value(),
             )
         except Exception as exc:
             self.status_label.setText(f"Cannot prepare provider request: {exc}")
@@ -296,13 +316,15 @@ class MinutesPanel(QWidget):
         warning = QLabel(preview["warning"])
         warning.setWordWrap(True)
         layout.addWidget(warning)
-        layout.addWidget(QLabel("Exact request body (prompt, selected transcript, model, token limit):"))
-        payload = QPlainTextEdit(json.dumps(preview["request_body"], ensure_ascii=False,
-                                         indent=2))
+        layout.addWidget(
+            QLabel("Exact request body (prompt, selected transcript, model, token limit):")
+        )
+        payload = QPlainTextEdit(json.dumps(preview["request_body"], ensure_ascii=False, indent=2))
         payload.setReadOnly(True)
         layout.addWidget(payload)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Yes |
-                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
@@ -321,8 +343,9 @@ class MinutesPanel(QWidget):
 
         def run() -> None:
             try:
-                self.cloud_finished.emit(snapshot.meeting_id,
-                                         self.cloud.generate(snapshot, authorization))
+                self.cloud_finished.emit(
+                    snapshot.meeting_id, self.cloud.generate(snapshot, authorization)
+                )
             except Exception as exc:
                 self.cloud_failed.emit(str(exc))
 
@@ -401,7 +424,8 @@ class MinutesPanel(QWidget):
             return
         if self.content_edit.toPlainText() != self._loaded_text:
             QMessageBox.information(
-                self, "Unsaved minutes edits",
+                self,
+                "Unsaved minutes edits",
                 "Save minutes edits as a new version or discard them before exporting.",
             )
             return
@@ -424,7 +448,8 @@ class MinutesPanel(QWidget):
             return
         if self.content_edit.toPlainText() != self._loaded_text:
             QMessageBox.information(
-                self, "Unsaved minutes edits",
+                self,
+                "Unsaved minutes edits",
                 "Save minutes edits as a new version or discard them before copying.",
             )
             return
@@ -462,8 +487,9 @@ class MinutesPanel(QWidget):
         form.addRow("Review guidance:", guidance)
         form.addRow("Topic count:", limit)
         layout.addLayout(form)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save |
-                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)

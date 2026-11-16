@@ -11,8 +11,7 @@ from fahmm.media import import_audio
 
 
 def call(app, operation, **params):
-    reply = app.handle({"v": 1, "kind": "request", "id": "test",
-                        "op": operation, "params": params})
+    reply = app.handle({"v": 1, "kind": "request", "id": "test", "op": operation, "params": params})
     encode_frame(reply)
     return reply["result"]
 

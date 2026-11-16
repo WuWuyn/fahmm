@@ -8,8 +8,9 @@ import pytest
 from fahmm.bridge.protocol import FrameError, validate_frame
 
 FIXTURES = json.loads(
-    (Path(__file__).resolve().parents[1] / "desktop" / "protocol" / "fixtures.json")
-    .read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[1] / "desktop" / "protocol" / "fixtures.json").read_text(
+        encoding="utf-8"
+    )
 )
 
 

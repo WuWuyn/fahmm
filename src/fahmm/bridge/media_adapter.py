@@ -25,9 +25,9 @@ def waveform_peaks(path: Path, bins: int) -> dict:
         if not len(samples):
             continue
         first = round(chunk.start_seconds * 48_000)
-        indices = np.minimum(bins - 1,
-                             ((first + np.arange(len(samples), dtype=np.int64))
-                              * bins // total_frames))
+        indices = np.minimum(
+            bins - 1, ((first + np.arange(len(samples), dtype=np.int64)) * bins // total_frames)
+        )
         amplitudes = np.abs(samples.astype(np.int32)).astype(np.float32) / 32768
         np.maximum.at(maxima, indices, amplitudes)
     return {"seconds": seconds, "peaks": maxima.round(4).tolist()}

@@ -27,7 +27,7 @@ class FixtureStream:
 
     def read(self, frames):
         time.sleep(frames / 48_000)
-        chunk = self.samples[self.position:self.position + frames]
+        chunk = self.samples[self.position : self.position + frames]
         self.position += frames
         if len(chunk) < frames:
             chunk = np.pad(chunk, (0, frames - len(chunk)))
@@ -47,8 +47,11 @@ class SpeechCapture(FakeCapture):
 
 
 def test_at05_record_asr_offline_draft_without_content_egress(tmp_path, monkeypatch):
-    sample = Path(os.environ.get("LOCALAPPDATA", "")) / "fahmm" / "acceptance" / (
-        "vi-vn-fleurs-dev-30m.wav"
+    sample = (
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "fahmm"
+        / "acceptance"
+        / ("vi-vn-fleurs-dev-30m.wav")
     )
     model = ModelManager().selected()
     if not sample.is_file() or model is None or model.repository != "Systran/faster-whisper-base":

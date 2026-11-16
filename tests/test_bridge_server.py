@@ -10,11 +10,19 @@ def test_sidecar_handshake_and_health(tmp_path):
     env = {**os.environ, "LOCALAPPDATA": str(tmp_path)}
     process = subprocess.Popen(
         [sys.executable, "-m", "fahmm.bridge"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
     )
     requests = (
-        {"v": 1, "kind": "request", "id": "hello", "op": "session.hello",
-         "params": {"versions": [1]}},
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "hello",
+            "op": "session.hello",
+            "params": {"versions": [1]},
+        },
         {"v": 1, "kind": "request", "id": "health", "op": "system.health", "params": {}},
     )
     payload = b"".join((json.dumps(request) + "\n").encode() for request in requests)
@@ -30,15 +38,33 @@ def test_sidecar_error_redacts_provider_request(tmp_path):
     env = {**os.environ, "LOCALAPPDATA": str(tmp_path)}
     process = subprocess.Popen(
         [sys.executable, "-m", "fahmm.bridge"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
     )
     requests = (
-        {"v": 1, "kind": "request", "id": "hello", "op": "session.hello",
-         "params": {"versions": [1]}},
-        {"v": 1, "kind": "request", "id": "bad", "op": "provider.save",
-         "params": {"name": "Secret", "baseUrl": "https://user:secret@example.org/v1",
-                    "modelId": "model", "timeoutSeconds": 30, "profileId": None,
-                    "apiKey": "private-api-key"}},
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "hello",
+            "op": "session.hello",
+            "params": {"versions": [1]},
+        },
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "bad",
+            "op": "provider.save",
+            "params": {
+                "name": "Secret",
+                "baseUrl": "https://user:secret@example.org/v1",
+                "modelId": "model",
+                "timeoutSeconds": 30,
+                "profileId": None,
+                "apiKey": "private-api-key",
+            },
+        },
     )
     payload = b"".join((json.dumps(request) + "\n").encode() for request in requests)
     output, errors = process.communicate(input=payload, timeout=15)

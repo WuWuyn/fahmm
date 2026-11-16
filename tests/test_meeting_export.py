@@ -16,11 +16,13 @@ from fahmm.transcripts import TranscriptStore
 def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     versions = MinutesStore(meetings)
-    approved = versions.save_version(meeting_id, run_id, "extractive", sample_content(run_id),
-                                     "default")
+    approved = versions.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id), "default"
+    )
     versions.approve_version(meeting_id, approved)
-    newer = versions.save_version(meeting_id, run_id, "extractive",
-                                 sample_content(run_id, "Bản chưa duyệt"), "default")
+    newer = versions.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id, "Bản chưa duyệt"), "default"
+    )
 
     service = MeetingExportService(meetings)
     first = service.minutes_markdown(meeting_id, approved)
@@ -37,13 +39,25 @@ def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
 def test_export_labels_action_entries_as_suggestions(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     content = sample_content(run_id)
-    content["actions"] = [{
-        "task": "Kiểm tra thử nghiệm", "owner": "Chưa rõ", "due_date": "Chưa rõ",
-        "verification_status": "Chưa xác minh", "sources": [{
-            "run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0,
-        }],
-    }]
-    version = MinutesStore(meetings).save_version(meeting_id, run_id, "extractive", content, "default")
+    content["actions"] = [
+        {
+            "task": "Kiểm tra thử nghiệm",
+            "owner": "Chưa rõ",
+            "due_date": "Chưa rõ",
+            "verification_status": "Chưa xác minh",
+            "sources": [
+                {
+                    "run_id": run_id,
+                    "segment_id": 1,
+                    "start": 0.0,
+                    "end": 2.0,
+                }
+            ],
+        }
+    ]
+    version = MinutesStore(meetings).save_version(
+        meeting_id, run_id, "extractive", content, "default"
+    )
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version)
     assert "> Action entries are suggestions, not assigned or tracked tasks." in markdown
     assert "Kiểm tra thử nghiệm" in markdown
@@ -68,10 +82,15 @@ def test_transcript_export_uses_selected_working_run(tmp_path):
     transcripts = TranscriptStore(meetings)
     transcripts.save_edits(meeting_id, earlier, {1: "Đã sửa bản ghi trước."})
     later = uuid.uuid4().hex
-    model = InstalledModel(uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40,
-                           100, tmp_path / "model")
+    model = InstalledModel(
+        uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40, 100, tmp_path / "model"
+    )
     transcripts.save_run(
-        meeting_id, later, model, "vi", {"duration": 5},
+        meeting_id,
+        later,
+        model,
+        "vi",
+        {"duration": 5},
         [{"id": 1, "start": 3.0, "end": 4.5, "text": "Nội dung mới."}],
     )
 

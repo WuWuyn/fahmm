@@ -37,11 +37,19 @@ def _items(value: object, selected: dict[int, object]) -> list[dict]:
             continue
         ids = _source_ids(item)
         valid = bool(ids) and all(segment_id in selected for segment_id in ids)
-        sources = [
-            {"run_id": segment.run_id, "segment_id": segment.id,
-             "start": segment.start, "end": segment.end}
-            for segment in (selected[segment_id] for segment_id in ids)
-        ] if valid else []
+        sources = (
+            [
+                {
+                    "run_id": segment.run_id,
+                    "segment_id": segment.id,
+                    "start": segment.start,
+                    "end": segment.end,
+                }
+                for segment in (selected[segment_id] for segment_id in ids)
+            ]
+            if valid
+            else []
+        )
         result.append({"text": text, "sources": sources, "needs_review": True})
     return result
 
@@ -60,8 +68,9 @@ def normalize_provider_minutes(raw: object, snapshot: CloudRequestSnapshot, meet
         raise TypeError("Provider returned an unsupported minutes response")
     if not isinstance(parsed, dict):
         raise TypeError("Provider returned an unsupported minutes response")
-    selected = {segment.id: _ReferencedSegment(snapshot.run_id, segment)
-                for segment in snapshot.segments}
+    selected = {
+        segment.id: _ReferencedSegment(snapshot.run_id, segment) for segment in snapshot.segments
+    }
     summary = _items(parsed.get("summary", parsed.get("main_summary", [])), selected)
     topics = _items(parsed.get("topics", []), selected)
     decisions = _items(parsed.get("decisions", []), selected)
@@ -79,21 +88,32 @@ def normalize_provider_minutes(raw: object, snapshot: CloudRequestSnapshot, meet
             cited = " ".join(selected[source["segment_id"]].text for source in item["sources"])
             owner = raw_action.get("owner")
             due = raw_action.get("due_date")
-            actions.append({
-                "task": item["text"],
-                "owner": owner if isinstance(owner, str) and owner.strip()
-                         and owner.casefold() in cited.casefold() else UNKNOWN,
-                "due_date": due if isinstance(due, str) and due.strip()
-                            and due.casefold() in cited.casefold() else UNKNOWN,
-                "verification_status": "Chưa xác minh",
-                "sources": item["sources"], "needs_review": True,
-            })
+            actions.append(
+                {
+                    "task": item["text"],
+                    "owner": owner
+                    if isinstance(owner, str)
+                    and owner.strip()
+                    and owner.casefold() in cited.casefold()
+                    else UNKNOWN,
+                    "due_date": due
+                    if isinstance(due, str) and due.strip() and due.casefold() in cited.casefold()
+                    else UNKNOWN,
+                    "verification_status": "Chưa xác minh",
+                    "sources": item["sources"],
+                    "needs_review": True,
+                }
+            )
     questions = _items(parsed.get("open_questions", []), selected)
-    if not any(any(word in segment.text.casefold() for word in DECISION_WORDS)
-               for segment in selected.values()):
+    if not any(
+        any(word in segment.text.casefold() for word in DECISION_WORDS)
+        for segment in selected.values()
+    ):
         decisions = []
-    if not any(any(word in segment.text.casefold() for word in ACTION_WORDS)
-               for segment in selected.values()):
+    if not any(
+        any(word in segment.text.casefold() for word in ACTION_WORDS)
+        for segment in selected.values()
+    ):
         actions = []
     title = meeting.get("name") or UNKNOWN
     if title == "Untitled meeting":

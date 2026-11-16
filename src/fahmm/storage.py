@@ -205,8 +205,11 @@ class MeetingStore:
             canonical = self._meeting_dir(meeting_id)
             if canonical.exists():
                 raise RuntimeError("A live meeting with this ID still exists")
-            if (meeting_id in self._deleting or self._activities.get(meeting_id)
-                    or meeting_id in self._imports):
+            if (
+                meeting_id in self._deleting
+                or self._activities.get(meeting_id)
+                or meeting_id in self._imports
+            ):
                 raise RuntimeError("Wait for active meeting work to finish")
             self._deleting.add(meeting_id)
 
@@ -305,8 +308,11 @@ class MeetingStore:
             try:
                 data = self.metadata(directory.name)
                 chunks, _ = self.scan_chunks(directory.name)
-                if (data["source_kind"] == "recorded" and data["state"] != "completed"
-                    and any(chunks.values())):
+                if (
+                    data["source_kind"] == "recorded"
+                    and data["state"] != "completed"
+                    and any(chunks.values())
+                ):
                     result.append(data)
             except (OSError, ValueError, KeyError, json.JSONDecodeError):
                 continue

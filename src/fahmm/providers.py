@@ -32,7 +32,13 @@ def validate_base_url(value: str) -> str:
         raise ValueError("Invalid provider Base URL") from exc
     if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.netloc.endswith(":"):
         raise ValueError("Provider Base URL must use HTTPS or local HTTP")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment or any(ord(c) < 32 for c in value):
+    if (
+        parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or any(ord(c) < 32 for c in value)
+    ):
         raise ValueError("Provider Base URL must not contain credentials, query, or fragment")
     if parsed.scheme == "http":
         host = parsed.hostname.casefold()
@@ -55,7 +61,9 @@ class ProviderProfile:
 
 
 class ProviderProfiles:
-    def __init__(self, path: Path | None = None, credentials: WindowsCredentialStore | None = None) -> None:
+    def __init__(
+        self, path: Path | None = None, credentials: WindowsCredentialStore | None = None
+    ) -> None:
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
         self.path = Path(path) if path is not None else base / "fahmm" / "providers.json"
         self._credentials = credentials
@@ -82,8 +90,14 @@ class ProviderProfiles:
         raise KeyError("Provider profile not found")
 
     def save(
-        self, name: str, base_url: str, model_id: str, timeout_seconds: float,
-        *, profile_id: str | None = None, api_key: str | None = None,
+        self,
+        name: str,
+        base_url: str,
+        model_id: str,
+        timeout_seconds: float,
+        *,
+        profile_id: str | None = None,
+        api_key: str | None = None,
     ) -> ProviderProfile:
         name, model_id = name.strip(), model_id.strip()
         if not name or len(name) > 120 or not model_id or len(model_id) > 200:
@@ -96,8 +110,9 @@ class ProviderProfiles:
             raise ValueError("Invalid provider profile ID")
         profiles = self.list_profiles()
         profile_id = profile_id or uuid.uuid4().hex
-        profile = ProviderProfile(profile_id, name, validate_base_url(base_url), model_id,
-                                  float(timeout_seconds))
+        profile = ProviderProfile(
+            profile_id, name, validate_base_url(base_url), model_id, float(timeout_seconds)
+        )
         if api_key is not None:
             old_key = self.credentials.get_key(profile_id)
             if api_key:
@@ -126,8 +141,9 @@ class ProviderProfiles:
         temporary = self.path.parent / f".providers-{uuid.uuid4().hex}.tmp"
         try:
             with temporary.open("w", encoding="utf-8") as file:
-                json.dump([asdict(profile) for profile in profiles], file, ensure_ascii=False,
-                          indent=2)
+                json.dump(
+                    [asdict(profile) for profile in profiles], file, ensure_ascii=False, indent=2
+                )
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, self.path)

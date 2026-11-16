@@ -129,14 +129,21 @@ def test_second_app_instance_is_rejected_then_crash_releases_lock(tmp_path):
         "lock.acquire(); print('ready',flush=True); time.sleep(30)"
     )
     holder = subprocess.Popen(
-        [sys.executable, "-c", holder_code, str(data_root)], env=env,
-        stdout=subprocess.PIPE, text=True,
+        [sys.executable, "-c", holder_code, str(data_root)],
+        env=env,
+        stdout=subprocess.PIPE,
+        text=True,
     )
     try:
         assert holder.stdout.readline().strip() == "ready"
         second = subprocess.run(
-            [sys.executable, "-m", "fahmm.bridge"], env=env,
-            input="", capture_output=True, text=True, timeout=15, check=False,
+            [sys.executable, "-m", "fahmm.bridge"],
+            env=env,
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
         assert second.returncode == 2
     finally:
@@ -144,8 +151,13 @@ def test_second_app_instance_is_rejected_then_crash_releases_lock(tmp_path):
         holder.wait(5)
         holder.stdout.close()
     restarted = subprocess.run(
-        [sys.executable, "-m", "fahmm.bridge"], env=env,
-        input="", capture_output=True, text=True, timeout=15, check=False,
+        [sys.executable, "-m", "fahmm.bridge"],
+        env=env,
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
     )
     assert restarted.returncode == 0, restarted.stderr
     assert store.metadata(meeting_id)["id"] == meeting_id

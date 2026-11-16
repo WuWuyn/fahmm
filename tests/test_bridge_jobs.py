@@ -14,9 +14,17 @@ from fahmm.models import InstalledModel
 
 def quick_worker(audio, model, language, output, cancel):
     output.put({"type": "started", "info": {"duration": 1, "language": language}})
-    output.put({"type": "segment", "segment": {
-        "id": 1, "start": 0, "end": 1, "text": "Xin chào",
-    }})
+    output.put(
+        {
+            "type": "segment",
+            "segment": {
+                "id": 1,
+                "start": 0,
+                "end": 1,
+                "text": "Xin chào",
+            },
+        }
+    )
     output.put({"type": "completed"})
 
 
@@ -30,9 +38,15 @@ def hanging_worker(audio, model, language, output, cancel):
 
 
 def call(app, operation, **params):
-    reply = app.handle({
-        "v": 1, "kind": "request", "id": "test", "op": operation, "params": params,
-    })
+    reply = app.handle(
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "test",
+            "op": operation,
+            "params": params,
+        }
+    )
     encode_frame(reply)
     assert reply["kind"] == "response"
     return reply["result"]
@@ -78,9 +92,16 @@ def test_offline_model_selection_install_progress_and_delete(tmp_path, monkeypat
 def test_asr_cancel_retry_and_prior_active_transcript(tmp_path, monkeypatch):
     app, meeting, model = prepared(tmp_path, monkeypatch)
     prior = uuid.uuid4().hex
-    app.transcripts.save_run(meeting, prior, model, "vi", {"duration": 1}, [
-        {"id": 2, "start": 0, "end": 1, "text": "Prior result"},
-    ])
+    app.transcripts.save_run(
+        meeting,
+        prior,
+        model,
+        "vi",
+        {"duration": 1},
+        [
+            {"id": 2, "start": 0, "end": 1, "text": "Prior result"},
+        ],
+    )
     app.asr = ASRJobController(app.store, app.models, worker_target=hanging_worker)
     call(app, "asr.start", meetingId=meeting, modelId=model.id, language="vi")
     call(app, "asr.cancel")
@@ -99,4 +120,7 @@ def test_asr_cancel_retry_and_prior_active_transcript(tmp_path, monkeypatch):
     app.asr.wait(10)
     assert call(app, "asr.status")["state"] == "completed"
     assert call(app, "transcript.list", meetingId=meeting)["activeRunId"] == run_id
-    assert call(app, "transcript.read", meetingId=meeting, runId=prior)["run"]["original"][0]["text"] == "Prior result"
+    assert (
+        call(app, "transcript.read", meetingId=meeting, runId=prior)["run"]["original"][0]["text"]
+        == "Prior result"
+    )

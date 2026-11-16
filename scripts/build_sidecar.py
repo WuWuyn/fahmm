@@ -22,13 +22,28 @@ def build() -> Path:
     BUILD.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     command = [
-        "uv", "run", "--locked", "--group", "build", "pyinstaller", "--noconfirm", "--clean",
-        "--onefile", "--console", "--name", "fahmm-sidecar",
-        "--distpath", str(BUILD / "sidecar-dist"),
-        "--workpath", str(BUILD / "sidecar-work"),
-        "--specpath", str(BUILD),
-        "--add-data", f"{ROOT / 'desktop' / 'protocol' / 'contract.json'};desktop/protocol",
-        "--exclude-module", "PySide6",
+        "uv",
+        "run",
+        "--locked",
+        "--group",
+        "build",
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
+        "--onefile",
+        "--console",
+        "--name",
+        "fahmm-sidecar",
+        "--distpath",
+        str(BUILD / "sidecar-dist"),
+        "--workpath",
+        str(BUILD / "sidecar-work"),
+        "--specpath",
+        str(BUILD),
+        "--add-data",
+        f"{ROOT / 'desktop' / 'protocol' / 'contract.json'};desktop/protocol",
+        "--exclude-module",
+        "PySide6",
     ]
     for package in ("faster_whisper", "av", "ctranslate2", "tokenizers"):
         command.extend(("--collect-all", package))
@@ -48,8 +63,9 @@ def build() -> Path:
             b'{"v":1,"kind":"request","id":"hello","op":"session.hello","params":{"versions":[1]}}\n'
             b'{"v":1,"kind":"request","id":"health","op":"system.health","params":{}}\n'
         )
-        result = subprocess.run([str(destination)], input=payload, capture_output=True,
-                                env=env, check=True, timeout=120)
+        result = subprocess.run(
+            [str(destination)], input=payload, capture_output=True, env=env, check=True, timeout=120
+        )
         lines = result.stdout.splitlines()
         if len(lines) != 2 or b'"status":"ready"' not in lines[1]:
             raise RuntimeError("Bundled sidecar handshake failed")

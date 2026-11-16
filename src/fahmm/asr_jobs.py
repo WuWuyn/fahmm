@@ -111,9 +111,7 @@ class ASRJobController:
         with self._lock:
             if self._snapshot.state not in ("loading", "running"):
                 return
-            self._snapshot = JobSnapshot(
-                **{**vars(self._snapshot), "state": "cancelling"}
-            )
+            self._snapshot = JobSnapshot(**{**vars(self._snapshot), "state": "cancelling"})
             self._cancel_event.set()
 
     def retry(self) -> str:

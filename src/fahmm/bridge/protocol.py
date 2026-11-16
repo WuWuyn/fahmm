@@ -81,21 +81,33 @@ def validate_frame(raw: bytes | str) -> dict[str, Any]:
         if frame.get("op") not in CONTRACT["operations"]:
             raise FrameError("UNSUPPORTED_OPERATION")
         operation = CONTRACT["operations"].get(frame.get("op"))
-        valid = id_ok and operation is not None and _fields_match(frame.get("params"), operation["params"])
+        valid = (
+            id_ok
+            and operation is not None
+            and _fields_match(frame.get("params"), operation["params"])
+        )
     elif kind == "response":
         operation = CONTRACT["operations"].get(frame.get("op"))
-        valid = id_ok and operation is not None and _fields_match(frame.get("result"), operation["result"])
+        valid = (
+            id_ok
+            and operation is not None
+            and _fields_match(frame.get("result"), operation["result"])
+        )
     elif kind == "error":
         error = frame.get("error")
         valid = (
-            id_ok and _record(error) and error.get("code") in CONTRACT["errorCodes"]
-            and isinstance(error.get("message"), str) and len(error["message"]) <= 200
+            id_ok
+            and _record(error)
+            and error.get("code") in CONTRACT["errorCodes"]
+            and isinstance(error.get("message"), str)
+            and len(error["message"]) <= 200
         )
     elif kind == "event":
         event = CONTRACT["events"].get(frame.get("event"))
         job_id = frame.get("jobId")
         valid = (
-            event is not None and (job_id is None or (isinstance(job_id, str) and _ID.fullmatch(job_id)))
+            event is not None
+            and (job_id is None or (isinstance(job_id, str) and _ID.fullmatch(job_id)))
             and _fields_match(frame.get("data"), event)
         )
     else:

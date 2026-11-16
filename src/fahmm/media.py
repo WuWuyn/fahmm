@@ -38,14 +38,18 @@ def probe_audio(path: Path) -> AudioInfo:
             duration = (
                 float(stream.duration * stream.time_base)
                 if stream.duration is not None and stream.time_base is not None
-                else float(container.duration / av.time_base) if container.duration else 0.0
+                else float(container.duration / av.time_base)
+                if container.duration
+                else 0.0
             )
             if duration > 1 and stream.time_base is not None:
                 container.seek(int((duration - 0.5) / float(stream.time_base)), stream=stream)
                 last_end = 0.0
                 for frame in container.decode(stream):
                     if frame.time is not None:
-                        last_end = max(last_end, float(frame.time) + frame.samples / frame.sample_rate)
+                        last_end = max(
+                            last_end, float(frame.time) + frame.samples / frame.sample_rate
+                        )
                 if last_end < duration - 1:
                     raise ValueError("The audio file is incomplete or truncated")
             return AudioInfo(

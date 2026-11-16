@@ -40,15 +40,19 @@ def render_minutes(content: dict) -> str:
         f"{headings.get('attendees', 'Người tham dự')}: {content.get('attendees', 'Chưa rõ')}",
     ]
     for key, fallback in (
-        ("summary", "Tóm tắt"), ("topics", "Chủ đề và thảo luận"),
-        ("decisions", "Quyết định"), ("actions", "Việc cần làm"),
+        ("summary", "Tóm tắt"),
+        ("topics", "Chủ đề và thảo luận"),
+        ("decisions", "Quyết định"),
+        ("actions", "Việc cần làm"),
         ("open_questions", "Câu hỏi và bước tiếp theo"),
     ):
         parts.append(f"\n## {headings.get(key, fallback)}")
         for item in content.get(key, []):
             if key == "actions":
-                line = (f"{item['task']} · Người phụ trách: {item['owner']} · "
-                        f"Hạn: {item['due_date']} · {item['verification_status']}")
+                line = (
+                    f"{item['task']} · Người phụ trách: {item['owner']} · "
+                    f"Hạn: {item['due_date']} · {item['verification_status']}"
+                )
             else:
                 line = item["text"]
             stamps = ", ".join(f"{source['start']:.1f}s" for source in item.get("sources", []))
@@ -65,7 +69,9 @@ class MeetingExportService:
             (model_root or meetings.root.parent / "models").resolve(),
         )
 
-    def _write_text(self, destination: Path | None, content: str, *, overwrite: bool) -> Path | None:
+    def _write_text(
+        self, destination: Path | None, content: str, *, overwrite: bool
+    ) -> Path | None:
         if destination is None:
             return None
         target = Path(destination)
@@ -131,7 +137,9 @@ class MeetingExportService:
         if manifest["origin"] == "extractive":
             lines.append("> Draft type: Source-linked extractive draft; not a semantic AI summary.")
         elif manifest["origin"] == "provider":
-            lines.append("> Draft type: Provider-generated draft; verify claims against the source.")
+            lines.append(
+                "> Draft type: Provider-generated draft; verify claims against the source."
+            )
         if content.get("actions"):
             lines.append("> Action entries are suggestions, not assigned or tracked tasks.")
         lines.extend(("", body))
@@ -141,11 +149,18 @@ class MeetingExportService:
                 for source in iter_citations(content)
             }
             if citations:
-                lines.extend([
-                    "", "## Source references from the underlying draft", "",
-                    "These references do not automatically verify the edited text.", "",
-                ])
-                for segment_id, start, end in sorted(citations, key=lambda item: (item[1], item[0])):
+                lines.extend(
+                    [
+                        "",
+                        "## Source references from the underlying draft",
+                        "",
+                        "These references do not automatically verify the edited text.",
+                        "",
+                    ]
+                )
+                for segment_id, start, end in sorted(
+                    citations, key=lambda item: (item[1], item[0])
+                ):
                     lines.append(
                         f"- Segment {segment_id}: {format_timestamp(start)}–{format_timestamp(end)}"
                     )

@@ -25,8 +25,10 @@ def _worker_smoke() -> int:
         if process.is_alive():
             process.terminate()
             process.join(timeout=5)
-        if process.exitcode == 0 and result.get("type") == "error" and (
-            "audio is missing" in result.get("message", "")
+        if (
+            process.exitcode == 0
+            and result.get("type") == "error"
+            and ("audio is missing" in result.get("message", ""))
         ):
             print("Frozen ASR worker spawn: PASS")
             return 0
@@ -87,7 +89,9 @@ def _pipeline_smoke(sample: str, report: str) -> int:
                 raise RuntimeError("ASR produced no transcript segments")
             version = OfflineMinutesService(store).generate(meeting_id)
             exporter = MeetingExportService(store)
-            exporter.export_transcript(meeting_id, run["manifest"]["run_id"], root / "transcript.txt")
+            exporter.export_transcript(
+                meeting_id, run["manifest"]["run_id"], root / "transcript.txt"
+            )
             exporter.export_minutes(meeting_id, version, root / "minutes.md")
             if not (root / "transcript.txt").is_file() or not (root / "minutes.md").is_file():
                 raise RuntimeError("Exports are missing")

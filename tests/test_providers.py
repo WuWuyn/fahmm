@@ -32,7 +32,10 @@ def test_multiple_profiles_persist_without_plaintext_keys_and_delete(tmp_path):
     profiles = ProviderProfiles(path, secrets)
     first = profiles.save("One", "https://example.org/v1", "model-a", 30, api_key="secret-123")
     second = profiles.save("Local", "http://127.0.0.1:1234/v1", "model-b", 45)
-    assert {item.name for item in ProviderProfiles(path, secrets).list_profiles()} == {"One", "Local"}
+    assert {item.name for item in ProviderProfiles(path, secrets).list_profiles()} == {
+        "One",
+        "Local",
+    }
     assert "secret-123" not in path.read_text(encoding="utf-8")
     profiles.save("Updated", first.base_url, first.model_id, 50, profile_id=first.id)
     assert profiles.get(first.id).name == "Updated"
@@ -42,11 +45,19 @@ def test_multiple_profiles_persist_without_plaintext_keys_and_delete(tmp_path):
     assert [item.id for item in profiles.list_profiles()] == [second.id]
 
 
-@pytest.mark.parametrize("url", [
-    "http://example.org/v1", "ftp://localhost/v1", "https://user:pass@example.org/v1",
-    "https://example.org/v1?x=1", "https://example.org/#fragment", "http://notlocalhost/v1",
-    "https://example.org:bad/v1", "https://example.org:",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.org/v1",
+        "ftp://localhost/v1",
+        "https://user:pass@example.org/v1",
+        "https://example.org/v1?x=1",
+        "https://example.org/#fragment",
+        "http://notlocalhost/v1",
+        "https://example.org:bad/v1",
+        "https://example.org:",
+    ],
+)
 def test_unsafe_urls_rejected(url):
     with pytest.raises(ValueError):
         validate_base_url(url)
@@ -67,10 +78,12 @@ def test_provider_client_refuses_redirect_to_other_endpoint():
         requests.append(request)
         return httpx.Response(307, headers={"location": "http://other.example/v1/chat/completions"})
 
-    client = DefaultHttpxClient(follow_redirects=False, verify=True,
-                                transport=httpx.MockTransport(respond))
-    sdk = OpenAI(api_key="test-only", base_url="https://safe.example/v1",
-                 http_client=client, max_retries=0)
+    client = DefaultHttpxClient(
+        follow_redirects=False, verify=True, transport=httpx.MockTransport(respond)
+    )
+    sdk = OpenAI(
+        api_key="test-only", base_url="https://safe.example/v1", http_client=client, max_retries=0
+    )
     with pytest.raises(APIStatusError):
         sdk.chat.completions.create(model="test", messages=[{"role": "user", "content": "x"}])
     assert len(requests) == 1
@@ -84,8 +97,14 @@ def test_real_profile_secret_stays_out_of_disk_and_logs(tmp_path, caplog):
     secret = f"fake-key-{uuid.uuid4().hex}"
     profiles = ProviderProfiles(tmp_path / "providers.json", WindowsCredentialStore())
     try:
-        profiles.save("Test", "https://example.org/v1", "test-model", 10,
-                      profile_id=profile_id, api_key=secret)
+        profiles.save(
+            "Test",
+            "https://example.org/v1",
+            "test-model",
+            10,
+            profile_id=profile_id,
+            api_key=secret,
+        )
         assert profiles.credentials.get_key(profile_id) == secret
         assert secret not in json.dumps([item.__dict__ for item in profiles.list_profiles()])
         assert secret not in (tmp_path / "providers.json").read_text(encoding="utf-8")

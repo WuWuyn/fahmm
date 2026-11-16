@@ -25,9 +25,15 @@ class ProviderHandler(BaseHTTPRequestHandler):
         self.requests.append((self.path, body, self.headers.get("Authorization")))
         if self.delay:
             time.sleep(self.delay)
-        payload = {"choices": [{"index": 0, "message": {
-            "role": "assistant", "content": "# Biên bản\nChưa rõ"
-        }, "finish_reason": "stop"}]}
+        payload = {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "# Biên bản\nChưa rõ"},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
         raw = json.dumps(payload).encode("utf-8")
         try:
             self.send_response(self.status)
@@ -43,8 +49,9 @@ class ProviderHandler(BaseHTTPRequestHandler):
 
 
 def start_provider(status=200, delay=0.0):
-    handler = type("LocalProvider", (ProviderHandler,), {"status": status,
-                    "delay": delay, "requests": []})
+    handler = type(
+        "LocalProvider", (ProviderHandler,), {"status": status, "delay": delay, "requests": []}
+    )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -53,8 +60,13 @@ def start_provider(status=200, delay=0.0):
 
 def authorize_for_server(service, meeting_id, profile_id, port, timeout=10):
     profile = service.profiles.get(profile_id)
-    service.profiles.save(profile.name, f"http://127.0.0.1:{port}/v1", profile.model_id,
-                          timeout, profile_id=profile_id)
+    service.profiles.save(
+        profile.name,
+        f"http://127.0.0.1:{port}/v1",
+        profile.model_id,
+        timeout,
+        profile_id=profile_id,
+    )
     snapshot = service.prepare(meeting_id, profile_id, {2}, {2})
     return snapshot, service.confirm(snapshot, True)
 
@@ -63,8 +75,9 @@ def test_loopback_text_provider_receives_only_confirmed_payload(tmp_path):
     server, handler = start_provider()
     try:
         service, meeting_id, profile_id, _, _ = make_cloud_service(tmp_path)
-        snapshot, authorization = authorize_for_server(service, meeting_id, profile_id,
-                                                       server.server_port)
+        snapshot, authorization = authorize_for_server(
+            service, meeting_id, profile_id, server.server_port
+        )
         assert service.send(snapshot, authorization).startswith("# Biên bản")
         assert len(handler.requests) == 1
         path, body, header = handler.requests[0]
@@ -86,17 +99,24 @@ def test_provider_failure_is_safe_and_preserves_local_data(tmp_path, caplog, sta
         version = OfflineMinutesService(service.meetings).generate(meeting_id, run_id)
         minutes.approve_version(meeting_id, version)
         folder = tmp_path / "meetings" / meeting_id
-        before = {str(path.relative_to(folder)): path.read_bytes()
-                  for path in folder.rglob("*") if path.is_file()}
-        snapshot, authorization = authorize_for_server(service, meeting_id, profile_id,
-                                                       server.server_port, timeout=1)
+        before = {
+            str(path.relative_to(folder)): path.read_bytes()
+            for path in folder.rglob("*")
+            if path.is_file()
+        }
+        snapshot, authorization = authorize_for_server(
+            service, meeting_id, profile_id, server.server_port, timeout=1
+        )
         with pytest.raises(ProviderError) as error:
             service.send(snapshot, authorization)
         assert error.value.kind == kind
         assert "test-secret-key" not in str(error.value)
         assert "test-secret-key" not in caplog.text
-        after = {str(path.relative_to(folder)): path.read_bytes()
-                 for path in folder.rglob("*") if path.is_file()}
+        after = {
+            str(path.relative_to(folder)): path.read_bytes()
+            for path in folder.rglob("*")
+            if path.is_file()
+        }
         assert after == before
         assert service.meetings.privacy_mode(meeting_id) == "cloud_permitted"
     finally:

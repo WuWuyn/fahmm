@@ -25,8 +25,12 @@ def test_cloud_ui_requires_mode_review_and_each_confirmation(tmp_path):
     service.meetings.set_privacy_mode(meeting_id, "restricted")
     calls = []
     service._transport = lambda snapshot, _key: calls.append(snapshot.digest) or "# Biên bản"
-    page = MeetingsPage(service.meetings, ModelManager(tmp_path / "models"),
-                        profiles=service.profiles, cloud_service=service)
+    page = MeetingsPage(
+        service.meetings,
+        ModelManager(tmp_path / "models"),
+        profiles=service.profiles,
+        cloud_service=service,
+    )
     page.show()
     select_meeting(page, meeting_id)
     panel = page.minutes_panel
@@ -80,8 +84,10 @@ def test_provider_wait_keeps_navigation_responsive_and_errors_hide_key(tmp_path)
 
     service._transport = slow_transport
     window = RecorderWindow(
-        SessionController(FakeCapture(), service.meetings), ModelManager(tmp_path / "models"),
-        service.profiles, service,
+        SessionController(FakeCapture(), service.meetings),
+        ModelManager(tmp_path / "models"),
+        service.profiles,
+        service,
     )
     window.show()
     window.switch_to("Meetings")

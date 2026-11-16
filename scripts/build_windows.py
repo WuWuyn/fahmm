@@ -38,8 +38,13 @@ def _build_env() -> dict[str, str]:
     windows = Path(os.environ.get("SystemRoot", "C:/Windows"))
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join(
-        [str(Path(sys.executable).parent), str(Path(uv).parent), str(windows / "System32"),
-         str(windows), str(windows / "System32" / "Wbem")]
+        [
+            str(Path(sys.executable).parent),
+            str(Path(uv).parent),
+            str(windows / "System32"),
+            str(windows),
+            str(windows / "System32" / "Wbem"),
+        ]
     )
     return env
 
@@ -52,8 +57,11 @@ def scan_package(folder: Path) -> list[str]:
             continue
         relative = path.relative_to(folder)
         parts = {part.lower() for part in relative.parts[:-1]}
-        if (parts & FORBIDDEN_DIRS or path.suffix.lower() in FORBIDDEN_SUFFIXES
-                or path.name.lower() in FORBIDDEN_NAMES):
+        if (
+            parts & FORBIDDEN_DIRS
+            or path.suffix.lower() in FORBIDDEN_SUFFIXES
+            or path.name.lower() in FORBIDDEN_NAMES
+        ):
             problems.append(f"User/model content: {relative}")
         if path.stat().st_size <= 10_000_000:
             try:
@@ -87,13 +95,15 @@ def write_license_inventory(folder: Path, locked: str) -> None:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
             copied.append(destination.relative_to(folder).as_posix())
-        inventory.append({
-            "package": dist.metadata["Name"], "version": dist.version,
-            "license_metadata": dist.metadata.get("License-Expression") or (
-                dist.metadata.get("License") or "unspecified"
-            ).splitlines()[0],
-            "wheel_notices": sorted(set(copied)),
-        })
+        inventory.append(
+            {
+                "package": dist.metadata["Name"],
+                "version": dist.version,
+                "license_metadata": dist.metadata.get("License-Expression")
+                or (dist.metadata.get("License") or "unspecified").splitlines()[0],
+                "wheel_notices": sorted(set(copied)),
+            }
+        )
     (folder / "LICENSE_INVENTORY.json").write_text(
         json.dumps(sorted(inventory, key=lambda x: x["package"].lower()), indent=2) + "\n",
         encoding="utf-8",
@@ -103,7 +113,9 @@ def write_license_inventory(folder: Path, locked: str) -> None:
 def build() -> Path:
     if sys.platform != "win32" or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise SystemExit("A Windows x64 host is required")
-    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
     for required in (ROOT / "docs" / "portable.md", ROOT / "docs" / "third-party-notices.md"):
         if not required.is_file():
             raise SystemExit(f"Required release document is missing: {required}")
@@ -111,27 +123,51 @@ def build() -> Path:
     RELEASE.mkdir(exist_ok=True)
     dist = BUILD / "release-dist"
     cmd = [
-        "uv", "run", "--locked", "--extra", "legacy-qt", "--group", "build", "pyinstaller", "--noconfirm", "--clean",
-        "--onedir", "--windowed", "--name", "fahmm", "--distpath", str(dist),
-        "--workpath", str(BUILD / "release-work"), "--specpath", str(BUILD),
+        "uv",
+        "run",
+        "--locked",
+        "--extra",
+        "legacy-qt",
+        "--group",
+        "build",
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
+        "--onedir",
+        "--windowed",
+        "--name",
+        "fahmm",
+        "--distpath",
+        str(dist),
+        "--workpath",
+        str(BUILD / "release-work"),
+        "--specpath",
+        str(BUILD),
     ]
     for package in ("faster_whisper", "av", "ctranslate2", "tokenizers"):
         cmd += ["--collect-all", package]
     cmd.append(str(ROOT / "scripts" / "fahmm_portable.py"))
     with (BUILD / "release-build.log").open("w", encoding="utf-8") as log:
-        subprocess.run(cmd, cwd=ROOT, env=_build_env(), stdout=log, stderr=subprocess.STDOUT,
-                       check=True)
+        subprocess.run(
+            cmd, cwd=ROOT, env=_build_env(), stdout=log, stderr=subprocess.STDOUT, check=True
+        )
     folder = dist / "fahmm"
     if not (folder / "fahmm.exe").is_file():
         raise RuntimeError("PyInstaller did not produce fahmm.exe")
     if (folder / "_internal" / "icuuc.dll").exists():
         raise RuntimeError("A non-system ICU DLL leaked into the build")
-    subprocess.run([str(folder / "fahmm.exe"), "--worker-smoke"],
-                   env=_build_env(), cwd=folder, check=True, timeout=60)
+    subprocess.run(
+        [str(folder / "fahmm.exe"), "--worker-smoke"],
+        env=_build_env(),
+        cwd=folder,
+        check=True,
+        timeout=60,
+    )
     smoke_env = _build_env()
     smoke_env["QT_QPA_PLATFORM"] = "offscreen"
-    subprocess.run([str(folder / "fahmm.exe"), "--smoke"],
-                   env=smoke_env, cwd=folder, check=True, timeout=60)
+    subprocess.run(
+        [str(folder / "fahmm.exe"), "--smoke"], env=smoke_env, cwd=folder, check=True, timeout=60
+    )
     for source, name in (
         (ROOT / "README.md", "README.md"),
         (ROOT / "LICENSE", "LICENSE"),
@@ -139,16 +175,29 @@ def build() -> Path:
         (ROOT / "docs" / "third-party-notices.md", "THIRD_PARTY_NOTICES.md"),
     ):
         (folder / name).write_bytes(source.read_bytes())
-    locked = _run("uv", "export", "--locked", "--extra", "legacy-qt", "--no-dev", "--no-hashes", "--no-emit-project")
+    locked = _run(
+        "uv",
+        "export",
+        "--locked",
+        "--extra",
+        "legacy-qt",
+        "--no-dev",
+        "--no-hashes",
+        "--no-emit-project",
+    )
     (folder / "RUNTIME_DEPENDENCIES.txt").write_text(locked + "\n", encoding="utf-8")
     write_license_inventory(folder, locked)
     info = {
-        "product": "fahmm", "version": version,
+        "product": "fahmm",
+        "version": version,
         "source_commit": _run("git", "rev-parse", "HEAD"),
         "source_dirty": bool(_run("git", "status", "--porcelain")),
-        "build_os": platform.platform(), "architecture": platform.machine(),
+        "build_os": platform.platform(),
+        "architecture": platform.machine(),
         "python": platform.python_version(),
-        "pyinstaller": _run("uv", "run", "--locked", "--group", "build", "pyinstaller", "--version"),
+        "pyinstaller": _run(
+            "uv", "run", "--locked", "--group", "build", "pyinstaller", "--version"
+        ),
         "model_weights_bundled": False,
     }
     (folder / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
@@ -173,8 +222,11 @@ def build() -> Path:
         if "fahmm/fahmm.exe" not in names or "fahmm/THIRD_PARTY_NOTICES.md" not in names:
             raise RuntimeError("Archive is missing its executable or notices")
         inventory = json.loads(check.read("fahmm/LICENSE_INVENTORY.json"))
-        if any("fahmm/" + notice not in names for entry in inventory
-               for notice in entry["wheel_notices"]):
+        if any(
+            "fahmm/" + notice not in names
+            for entry in inventory
+            for notice in entry["wheel_notices"]
+        ):
             raise RuntimeError("Archive notice inventory does not match its contents")
     with archive.open("rb") as file:
         if hashlib.file_digest(file, "sha256").hexdigest() != digest:

@@ -14,19 +14,30 @@ def make_meeting_with_run(tmp_path):
     meetings = MeetingStore(tmp_path)
     meeting_id = meetings.create({})
     run_id = uuid.uuid4().hex
-    model = InstalledModel(uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40,
-                           100, tmp_path / "model")
+    model = InstalledModel(
+        uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40, 100, tmp_path / "model"
+    )
     TranscriptStore(meetings).save_run(
-        meeting_id, run_id, model, "vi", {"duration": 3},
+        meeting_id,
+        run_id,
+        model,
+        "vi",
+        {"duration": 3},
         [{"id": 1, "start": 0.0, "end": 2.0, "text": "Đã thống nhất thử nghiệm."}],
     )
     return meetings, meeting_id, run_id
 
 
 def sample_content(run_id, text="Đã thống nhất thử nghiệm."):
-    return {"title": "Chưa rõ", "decisions": [{"text": text, "sources": [
-        {"run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0}
-    ]}]}
+    return {
+        "title": "Chưa rõ",
+        "decisions": [
+            {
+                "text": text,
+                "sources": [{"run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0}],
+            }
+        ],
+    }
 
 
 def test_versions_approval_edits_and_reopen_preserve_content(tmp_path):
@@ -36,12 +47,16 @@ def test_versions_approval_edits_and_reopen_preserve_content(tmp_path):
     store.approve_version(meeting_id, first)
     original = store.read_version(meeting_id, first)
     edited = store.edit_version(meeting_id, first, sample_content(run_id, "User correction"))
-    regenerated = store.save_version(meeting_id, run_id, "extractive", sample_content(run_id),
-                                     "revised")
+    regenerated = store.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id), "revised"
+    )
     assert len({first, edited, regenerated}) == 3
     assert store.read_version(meeting_id, first) == original
     assert store.read_version(meeting_id, edited)["manifest"]["review_state"] == "unverified"
-    assert store.read_version(meeting_id, edited)["content"]["decisions"][0]["text"] == "User correction"
+    assert (
+        store.read_version(meeting_id, edited)["content"]["decisions"][0]["text"]
+        == "User correction"
+    )
     reopened = MinutesStore(MeetingStore(tmp_path))
     assert reopened.active_version(meeting_id)["manifest"]["version_id"] == regenerated
     assert len(reopened.list_versions(meeting_id)) == 3

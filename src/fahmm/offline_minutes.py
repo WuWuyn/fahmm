@@ -15,8 +15,26 @@ UNKNOWN = "Chưa rõ"
 DECISION_WORDS = ("thống nhất", "quyết định", "đồng ý", "chốt", "nhất trí")
 ACTION_WORDS = ("cần thực hiện", "cần làm", "giao cho", "phụ trách", "sẽ làm", "sẽ gửi")
 QUESTION_WORDS = ("?", "chưa rõ", "cần làm rõ", "cần xác nhận")
-STOP_WORDS = {"và", "là", "của", "cho", "với", "trong", "được", "các", "những",
-              "một", "này", "đó", "thì", "đã", "sẽ", "cần", "có", "không"}
+STOP_WORDS = {
+    "và",
+    "là",
+    "của",
+    "cho",
+    "với",
+    "trong",
+    "được",
+    "các",
+    "những",
+    "một",
+    "này",
+    "đó",
+    "thì",
+    "đã",
+    "sẽ",
+    "cần",
+    "có",
+    "không",
+}
 
 
 def _reference(run_id: str, segment: dict) -> dict:
@@ -33,8 +51,9 @@ def _item(run_id: str, segment: dict) -> dict:
 
 
 def _topic_segments(segments: list[dict], limit: int = 5) -> list[dict]:
-    tokenized = [set(re.findall(r"\w+", segment["text"].casefold())) - STOP_WORDS
-                 for segment in segments]
+    tokenized = [
+        set(re.findall(r"\w+", segment["text"].casefold())) - STOP_WORDS for segment in segments
+    ]
     frequency = Counter(token for tokens in tokenized for token in tokens)
     selected: list[int] = []
     covered: set[str] = set()
@@ -42,11 +61,14 @@ def _topic_segments(segments: list[dict], limit: int = 5) -> list[dict]:
         choices = [index for index in range(len(segments)) if index not in selected]
         if not choices:
             break
-        best = max(choices, key=lambda index: (
-            sum(1 / frequency[token] for token in tokenized[index] - covered),
-            len(tokenized[index] - covered),
-            -index,
-        ))
+        best = max(
+            choices,
+            key=lambda index: (
+                sum(1 / frequency[token] for token in tokenized[index] - covered),
+                len(tokenized[index] - covered),
+                -index,
+            ),
+        )
         selected.append(best)
         covered.update(tokenized[best])
     return [segments[index] for index in sorted(selected)]
@@ -63,16 +85,27 @@ def extract_minutes(meeting: dict, run_id: str, segments: list[dict], topic_limi
         raise ValueError("A non-empty transcript is required for minutes")
     usable.sort(key=lambda segment: (segment["start"], segment["id"]))
     topics = [_item(run_id, segment) for segment in _topic_segments(usable, topic_limit)]
-    decisions = [_item(run_id, segment) for segment in usable
-                 if any(word in segment["text"].casefold() for word in DECISION_WORDS)]
+    decisions = [
+        _item(run_id, segment)
+        for segment in usable
+        if any(word in segment["text"].casefold() for word in DECISION_WORDS)
+    ]
     actions = [
-        {"task": segment["text"], "owner": UNKNOWN, "due_date": UNKNOWN,
-         "verification_status": "Chưa xác minh", "sources": [_reference(run_id, segment)]}
+        {
+            "task": segment["text"],
+            "owner": UNKNOWN,
+            "due_date": UNKNOWN,
+            "verification_status": "Chưa xác minh",
+            "sources": [_reference(run_id, segment)],
+        }
         for segment in usable
         if any(word in segment["text"].casefold() for word in ACTION_WORDS)
     ]
-    questions = [_item(run_id, segment) for segment in usable
-                 if any(word in segment["text"].casefold() for word in QUESTION_WORDS)]
+    questions = [
+        _item(run_id, segment)
+        for segment in usable
+        if any(word in segment["text"].casefold() for word in QUESTION_WORDS)
+    ]
     title = meeting.get("name") or UNKNOWN
     if title == "Untitled meeting":
         title = UNKNOWN
@@ -112,6 +145,9 @@ class OfflineMinutesService:
         content["headings"] = copy.deepcopy(template["headings"])
         content["guidance"] = template["guidance"]
         return self.minutes.save_version(
-            meeting_id, run_id, "extractive", content,
+            meeting_id,
+            run_id,
+            "extractive",
+            content,
             json.dumps(template, ensure_ascii=False, sort_keys=True),
         )

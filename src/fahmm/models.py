@@ -42,7 +42,11 @@ def validate_model_dir(path: Path) -> None:
     required = ("model.bin", "config.json", "tokenizer.json")
     for name in required:
         item = path / name
-        if not item.is_file() or item.stat().st_size == 0 or not item.resolve().is_relative_to(path):
+        if (
+            not item.is_file()
+            or item.stat().st_size == 0
+            or not item.resolve().is_relative_to(path)
+        ):
             raise ValueError(f"Incomplete local Whisper model: missing {name}")
     vocabulary = [path / name for name in ("vocabulary.txt", "vocabulary.json")]
     if not any(
@@ -212,9 +216,7 @@ class ModelManager:
             raise ValueError("Enter a Hugging Face repository ID as publisher/name")
         if repository in BY_REPOSITORY and revision is None:
             revision = BY_REPOSITORY[repository].revision
-        info = HfApi().model_info(
-            repository, revision=revision, files_metadata=True, token=False
-        )
+        info = HfApi().model_info(repository, revision=revision, files_metadata=True, token=False)
         commit = info.sha
         if not re.fullmatch(r"[0-9a-f]{40}", commit or ""):
             raise ValueError("Repository did not return a fixed model revision")
@@ -261,7 +263,8 @@ class ModelManager:
         staging = self.root / "staging" / staging_key
         staging.mkdir(parents=True, exist_ok=True)
         staged_bytes = sum(
-            (staging / name).stat().st_size for name, _ in remote.files
+            (staging / name).stat().st_size
+            for name, _ in remote.files
             if (staging / name).is_file()
         )
         needed = max(0, remote.estimated_bytes - staged_bytes) + 64 * 1024 * 1024

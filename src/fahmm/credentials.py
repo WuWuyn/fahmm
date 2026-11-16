@@ -40,8 +40,12 @@ class WindowsCredentialStore:
             self.api = ctypes.WinDLL("Advapi32", use_last_error=True)
             self.api.CredWriteW.argtypes = [PCREDENTIALW, wintypes.DWORD]
             self.api.CredWriteW.restype = wintypes.BOOL
-            self.api.CredReadW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
-                                           wintypes.DWORD, ctypes.POINTER(PCREDENTIALW)]
+            self.api.CredReadW.argtypes = [
+                wintypes.LPCWSTR,
+                wintypes.DWORD,
+                wintypes.DWORD,
+                ctypes.POINTER(PCREDENTIALW),
+            ]
             self.api.CredReadW.restype = wintypes.BOOL
             self.api.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
             self.api.CredDeleteW.restype = wintypes.BOOL
@@ -78,19 +82,23 @@ class WindowsCredentialStore:
 
     def get_key(self, profile_id: str) -> str | None:
         pointer = PCREDENTIALW()
-        if not self.api.CredReadW(self._target(profile_id), CRED_TYPE_GENERIC, 0,
-                                  ctypes.byref(pointer)):
+        if not self.api.CredReadW(
+            self._target(profile_id), CRED_TYPE_GENERIC, 0, ctypes.byref(pointer)
+        ):
             if ctypes.get_last_error() == ERROR_NOT_FOUND:
                 return None
             raise RuntimeError("Could not read API key from Windows Credential Manager")
         try:
             credential = pointer.contents
-            return ctypes.string_at(credential.CredentialBlob,
-                                    credential.CredentialBlobSize).decode("utf-8")
+            return ctypes.string_at(
+                credential.CredentialBlob, credential.CredentialBlobSize
+            ).decode("utf-8")
         finally:
             self.api.CredFree(pointer)
 
     def delete_key(self, profile_id: str) -> None:
-        if (not self.api.CredDeleteW(self._target(profile_id), CRED_TYPE_GENERIC, 0)
-                and ctypes.get_last_error() != ERROR_NOT_FOUND):
+        if (
+            not self.api.CredDeleteW(self._target(profile_id), CRED_TYPE_GENERIC, 0)
+            and ctypes.get_last_error() != ERROR_NOT_FOUND
+        ):
             raise RuntimeError("Could not remove API key from Windows Credential Manager")

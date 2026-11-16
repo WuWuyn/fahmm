@@ -74,8 +74,11 @@ class MeetingDeletionService:
             if not re.fullmatch(r"\.import-[0-9a-f]{32}", path.name):
                 continue
             meeting_id = path.name.removeprefix(".import-")
-            if (meeting_id not in active and not self.meetings._meeting_dir(meeting_id).exists()
-                    and not self._tombstone(meeting_id).exists()):
+            if (
+                meeting_id not in active
+                and not self.meetings._meeting_dir(meeting_id).exists()
+                and not self._tombstone(meeting_id).exists()
+            ):
                 result.append(meeting_id)
         return sorted(result)
 

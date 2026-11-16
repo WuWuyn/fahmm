@@ -128,8 +128,7 @@ def test_custom_repository_rejection_and_safe_model_deletion(tmp_path, monkeypat
     model_id = uuid.uuid4().hex
     path = manager._path(model_id)
     make_bundle(path)
-    manager._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40,
-                                     20, path))
+    manager._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, path))
     manager.begin_use(model_id)
     with pytest.raises(RuntimeError, match="in use"):
         manager.delete(model_id)

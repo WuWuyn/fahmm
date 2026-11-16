@@ -33,20 +33,30 @@ def send_chat_completion(snapshot: CloudRequestSnapshot, api_key: str | None) ->
         ) as client:
             response = client.chat.completions.create(**snapshot.request_body)
         if not response.choices:
-            raise ProviderError("format", "Provider returned no minutes; retry or choose another profile")
+            raise ProviderError(
+                "format", "Provider returned no minutes; retry or choose another profile"
+            )
         content = response.choices[0].message.content
         if not isinstance(content, str) or not content.strip():
             raise ProviderError("format", "Provider returned no usable minutes text")
         return content.strip()
     except APITimeoutError:
-        raise ProviderError("timeout", "Provider timed out; retry or choose another profile") from None
+        raise ProviderError(
+            "timeout", "Provider timed out; retry or choose another profile"
+        ) from None
     except RateLimitError:
         raise ProviderError("quota", "Provider rate limit or quota reached; retry later") from None
     except APIConnectionError:
-        raise ProviderError("network", "Could not reach the provider; check the connection") from None
+        raise ProviderError(
+            "network", "Could not reach the provider; check the connection"
+        ) from None
     except APIStatusError as exc:
         if exc.status_code in (402, 429):
             raise ProviderError("quota", "Provider quota or billing limit reached") from None
-        raise ProviderError("provider", "Provider rejected the request; check the profile") from None
+        raise ProviderError(
+            "provider", "Provider rejected the request; check the profile"
+        ) from None
     except OpenAIError:
-        raise ProviderError("format", "Provider response was not compatible; retry or change provider") from None
+        raise ProviderError(
+            "format", "Provider response was not compatible; retry or change provider"
+        ) from None

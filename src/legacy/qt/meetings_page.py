@@ -162,8 +162,12 @@ class MeetingsPage(QWidget):
         review_actions.addWidget(self.export_transcript_button)
         layout.addLayout(review_actions)
         self.minutes_panel = MinutesPanel(
-            store, self.open_minutes_source, self.selected_segment_ids,
-            lambda: self._dirty, self.profiles, cloud_service,
+            store,
+            self.open_minutes_source,
+            self.selected_segment_ids,
+            lambda: self._dirty,
+            self.profiles,
+            cloud_service,
         )
         self.segment_table.itemSelectionChanged.connect(self.minutes_panel.clear_review)
         layout.addWidget(self.minutes_panel)
@@ -246,7 +250,11 @@ class MeetingsPage(QWidget):
         if meeting_id:
             meeting = self.library.get(meeting_id)
             self.name_edit.setText(meeting.name)
-            mode = "Cloud permitted" if meeting.privacy_mode == "cloud_permitted" else "Internal/Restricted"
+            mode = (
+                "Cloud permitted"
+                if meeting.privacy_mode == "cloud_permitted"
+                else "Internal/Restricted"
+            )
             self.status_label.setText(f"{meeting.name} · {meeting.status} · {mode}")
         else:
             self.name_edit.clear()
@@ -258,12 +266,16 @@ class MeetingsPage(QWidget):
         meeting_id = self._selected_id()
         snapshot = self.jobs.snapshot()
         active = snapshot.state in ("loading", "running", "cancelling")
-        completed_audio = bool(meeting_id and self.library.get(meeting_id).recording_state == "completed")
+        completed_audio = bool(
+            meeting_id and self.library.get(meeting_id).recording_state == "completed"
+        )
         self.name_edit.setEnabled(bool(meeting_id))
         self.rename_button.setEnabled(bool(meeting_id))
         self.delete_button.setEnabled(bool(meeting_id))
         self.play_button.setEnabled(completed_audio)
-        self.transcribe_button.setEnabled(completed_audio and self.model_box.count() > 0 and not active)
+        self.transcribe_button.setEnabled(
+            completed_audio and self.model_box.count() > 0 and not active
+        )
         self.cancel_button.setEnabled(active and snapshot.meeting_id == meeting_id)
         self.retry_button.setEnabled(
             snapshot.state in ("cancelled", "error") and snapshot.meeting_id == meeting_id
@@ -325,7 +337,8 @@ class MeetingsPage(QWidget):
             return
         meeting = self.library.get(meeting_id)
         answer = QMessageBox.question(
-            self, "Delete meeting?",
+            self,
+            "Delete meeting?",
             f"Delete '{meeting.name}' and its fahmm audio, transcripts, minutes, metadata, "
             "and temporary files?\n\nThis cannot be undone. Exports, clipboard copies, and "
             "system backups remain. Ordinary deletion is not secure erasure.",
@@ -361,7 +374,8 @@ class MeetingsPage(QWidget):
             return
         meeting_id = item.data(Qt.UserRole)
         answer = QMessageBox.question(
-            self, "Clean abandoned import?",
+            self,
+            "Clean abandoned import?",
             f"Remove the unfinished fahmm import {meeting_id}? The original audio file "
             "outside fahmm will remain untouched.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
@@ -494,7 +508,9 @@ class MeetingsPage(QWidget):
         if stamp:
             original = self._original_segments.get(stamp.data(Qt.UserRole))
             self.original_label.setText(
-                f"Original ASR text: {original['text']}" if original else "Original ASR text: Missing"
+                f"Original ASR text: {original['text']}"
+                if original
+                else "Original ASR text: Missing"
             )
         else:
             self.original_label.setText("Original ASR text: Select a segment")
@@ -514,7 +530,9 @@ class MeetingsPage(QWidget):
         if not meeting_id or not self._loaded_run_id:
             return
         edits = {
-            self.segment_table.item(row, 0).data(Qt.UserRole): self.segment_table.item(row, 1).text()
+            self.segment_table.item(row, 0).data(Qt.UserRole): self.segment_table.item(
+                row, 1
+            ).text()
             for row in range(self.segment_table.rowCount())
         }
         try:
@@ -533,7 +551,8 @@ class MeetingsPage(QWidget):
             return
         if self._dirty:
             QMessageBox.information(
-                self, "Unsaved transcript edits",
+                self,
+                "Unsaved transcript edits",
                 "Save transcript edits or discard them before exporting.",
             )
             return
