@@ -67,9 +67,9 @@ The app opens on the Recorder screen. The user chooses devices and presses Recor
 
 | ID | Priority | Requirement |
 | --- | --- | --- |
-| FR-08 | P0 | Use faster-whisper/CTranslate2 for offline recognition from saved audio. |
+| FR-08 | P0 | Use faster-whisper/CTranslate2 for offline recognition from the selected meeting's saved audio, starting at a user-selected time or 00:00 by default and processing through the end of that recording. |
 | FR-09 | P0 | Default to Vietnamese (vi), with optional Auto Detect and English modes. |
-| FR-10 | P0 | Include segment timestamps and support Vietnamese speech mixed with English terms. |
+| FR-10 | P0 | Include source-relative segment timestamps within the recording's duration and support Vietnamese speech mixed with English terms. |
 | FR-11 | P0 | Show processing progress, Cancel/Retry, and errors without blocking the UI. |
 | FR-12 | P0 | Allow transcript editing before minutes generation; retain the original transcription or a minimal edit history. |
 | FR-13 | P1 | Support a custom names/terms dictionary for reruns and SRT export. |

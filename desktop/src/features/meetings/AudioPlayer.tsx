@@ -19,8 +19,9 @@ function timeLabel(value: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function AudioPlayer({ meetingId, seekTo }: {
+export function AudioPlayer({ meetingId, seekTo, onPositionChange, onDurationChange }: {
   meetingId: string; seekTo: { seconds: number; nonce: number } | null;
+  onPositionChange?: (seconds: number) => void; onDurationChange?: (seconds: number) => void;
 }) {
   const t = useT();
   const container = useRef<HTMLDivElement>(null);
@@ -38,7 +39,8 @@ export function AudioPlayer({ meetingId, seekTo }: {
     let alive = true;
     let fallbackUsed = false;
     let loadSequence = 0;
-    setPlaying(false); setPosition(0); setLoading(true); setError("");
+    setPlaying(false); setPosition(0); onPositionChange?.(0); setDuration(0); onDurationChange?.(0);
+    setLoading(true); setError("");
     const wave = WaveSurfer.create({
       container: container.current, height: 70, barWidth: 3, barGap: 2, barRadius: 2,
       waveColor: theme === "dark" ? "#54749f" : "#a8c4e9",
@@ -50,7 +52,7 @@ export function AudioPlayer({ meetingId, seekTo }: {
     wave.on("play", () => setPlaying(true));
     wave.on("pause", () => setPlaying(false));
     wave.on("finish", () => setPlaying(false));
-    wave.on("timeupdate", (seconds) => setPosition(seconds));
+    wave.on("timeupdate", (seconds) => { setPosition(seconds); onPositionChange?.(seconds); });
     const load = async (fallback: boolean) => {
       const sequence = ++loadSequence;
       try {
@@ -59,7 +61,7 @@ export function AudioPlayer({ meetingId, seekTo }: {
           bridgeCall<Peaks>("media.peaks", { meetingId, bins: 1024 }),
         ]);
         if (!alive) return;
-        setDuration(data.seconds);
+        setDuration(data.seconds); onDurationChange?.(data.seconds);
         const samples = new Float32Array(data.peaks.length * 2);
         data.peaks.forEach((peak, index) => { samples[index * 2] = -peak; samples[index * 2 + 1] = peak; });
         await wave.load(mediaUrl(meetingId, ticket.ticket), [samples], data.seconds);

@@ -57,6 +57,17 @@ Using a previously installed compatible faster-whisper/CTranslate2 model, the ap
 - **WHEN** an ASR worker crashes or is cancelled
 - **THEN** the app reports the failure, allows a safe retry and retains any previous completed transcript run
 
+### Requirement: Selected-recording transcription range and source timestamps
+The app SHALL transcribe the selected meeting's saved audio from a user-selected time, or 00:00 by default, through the end. Segment timestamps SHALL refer to the original recording and stay within its duration. Retry SHALL retain the meeting and start time.
+
+#### Scenario: User selects a playback position before transcription
+- **WHEN** the user selects a meeting, seeks its player to a start time and requests transcription from that position
+- **THEN** only that meeting's saved audio from the chosen time through its end is processed; the run retains the chosen start time and its transcript timestamps seek to the original recording
+
+#### Scenario: Default and invalid start times
+- **WHEN** the user leaves the start time unset or provides a time at or beyond the end of the recording
+- **THEN** an unset time starts at 00:00; an out-of-range time is rejected without replacing a prior transcript run
+
 ### Requirement: Model provenance and optional download
 Models SHALL only download on user request, SHALL reject incompatible custom repositories and SHALL support offline cached reuse and safe deletion of non-active models.
 

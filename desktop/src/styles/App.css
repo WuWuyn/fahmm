@@ -166,6 +166,9 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .document-toolbar select, .cloud-section select { flex: 1; min-width: 160px; min-height: 36px; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 0 9px; font-size: 11px; }
 .document-toolbar [data-slot="native-select-wrapper"], .cloud-section [data-slot="native-select-wrapper"] { flex: 1; min-width: 160px; }
 .toolbar-actions, .document-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.transcription-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.transcription-start [data-slot="input"] { width: 100px; }
+.transcription-start .hint { flex-basis: 100%; }
 .job-progress { display: flex; align-items: center; gap: 10px; margin-top: 18px; color: var(--muted); font-size: 11px; }
 .job-progress progress { flex: 1; accent-color: var(--accent); }
 .job-progress [data-slot="progress"] { flex: 1; }

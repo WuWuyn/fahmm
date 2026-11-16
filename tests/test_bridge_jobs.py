@@ -3,8 +3,10 @@
 import os
 import time
 import uuid
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from fahmm.asr_jobs import ASRJobController
 from fahmm.bridge.protocol import encode_frame
@@ -12,7 +14,7 @@ from fahmm.bridge.server import BridgeApplication
 from fahmm.models import InstalledModel
 
 
-def quick_worker(audio, model, language, output, cancel):
+def quick_worker(audio, model, language, output, cancel, start_seconds):
     output.put({"type": "started", "info": {"duration": 1, "language": language}})
     output.put(
         {
@@ -28,13 +30,29 @@ def quick_worker(audio, model, language, output, cancel):
     output.put({"type": "completed"})
 
 
-def crashed_worker(audio, model, language, output, cancel):
+def crashed_worker(audio, model, language, output, cancel, start_seconds):
     os._exit(7)
 
 
-def hanging_worker(audio, model, language, output, cancel):
+def hanging_worker(audio, model, language, output, cancel, start_seconds):
     output.put({"type": "started", "info": {"duration": 100, "language": language}})
     time.sleep(30)
+
+
+def offset_worker(audio, model, language, output, cancel, start_seconds):
+    output.put({"type": "started", "info": {"duration": 3.0, "start_seconds": start_seconds}})
+    output.put(
+        {
+            "type": "segment",
+            "segment": {
+                "id": 1,
+                "start": start_seconds,
+                "end": 3.0,
+                "text": Path(audio).parent.name,
+            },
+        }
+    )
+    output.put({"type": "completed"})
 
 
 def call(app, operation, **params):
@@ -123,4 +141,44 @@ def test_asr_cancel_retry_and_prior_active_transcript(tmp_path, monkeypatch):
     assert (
         call(app, "transcript.read", meetingId=meeting, runId=prior)["run"]["original"][0]["text"]
         == "Prior result"
+    )
+
+
+def test_start_from_selected_meeting_rejects_out_of_range_and_retries_same_offset(
+    tmp_path, monkeypatch
+):
+    app, other_meeting, model = prepared(tmp_path, monkeypatch)
+    selected = app.store.create({"system": "speaker", "microphone": "mic"})
+    app.store.write_chunk(selected, "system", 0, np.ones(3 * 48_000, dtype=np.float32))
+    app.store.finalize(selected)
+    app.asr = ASRJobController(app.store, app.models, worker_target=offset_worker)
+
+    for bad_start in (-1, 3.0, float("nan")):
+        with pytest.raises(ValueError):
+            call(
+                app,
+                "asr.startFrom",
+                meetingId=selected,
+                modelId=model.id,
+                language="vi",
+                startSeconds=bad_start,
+            )
+    assert call(app, "transcript.list", meetingId=selected)["runs"] == []
+
+    run_id = call(
+        app, "asr.startFrom", meetingId=selected, modelId=model.id, language="vi", startSeconds=1.0
+    )["runId"]
+    app.asr.wait(10)
+    assert call(app, "asr.status")["state"] == "completed"
+    saved = call(app, "transcript.read", meetingId=selected, runId=run_id)["run"]
+    assert saved["manifest"]["start_seconds"] == 1.0
+    assert saved["original"] == [{"id": 1, "start": 1.0, "end": 3.0, "text": selected}]
+    assert call(app, "transcript.list", meetingId=other_meeting)["runs"] == []
+
+    retried = call(app, "asr.retry")["runId"]
+    app.asr.wait(10)
+    assert retried != run_id
+    assert (
+        call(app, "transcript.read", meetingId=selected, runId=retried)["run"]["original"]
+        == saved["original"]
     )

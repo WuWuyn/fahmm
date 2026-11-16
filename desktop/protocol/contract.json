@@ -151,6 +151,10 @@
       "params": { "meetingId": "string", "modelId": "string", "language": "string" },
       "result": { "runId": "string" }
     },
+    "asr.startFrom": {
+      "params": { "meetingId": "string", "modelId": "string", "language": "string", "startSeconds": "number" },
+      "result": { "runId": "string" }
+    },
     "asr.cancel": {
       "params": {},
       "result": { "state": "string" }

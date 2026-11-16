@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -30,16 +31,18 @@ class ASRInfo:
 
 class ASRBackend(Protocol):
     def transcribe(
-        self, audio_path: Path, model_path: Path, language: str = "vi"
+        self, audio_path: Path, model_path: Path, language: str = "vi", start_seconds: float = 0.0
     ) -> tuple[Iterable[Segment], ASRInfo]: ...
 
 
 class WhisperASRBackend:
     def transcribe(
-        self, audio_path: Path, model_path: Path, language: str = "vi"
+        self, audio_path: Path, model_path: Path, language: str = "vi", start_seconds: float = 0.0
     ) -> tuple[Iterable[Segment], ASRInfo]:
         if language not in LANGUAGES:
             raise ValueError("Choose Vietnamese, Auto Detect, or English")
+        if not math.isfinite(start_seconds) or start_seconds < 0:
+            raise ValueError("The transcription start time must be non-negative")
         audio_path = Path(audio_path)
         model_path = Path(model_path)
         if not audio_path.is_file():
@@ -49,18 +52,31 @@ class WhisperASRBackend:
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
         from faster_whisper import WhisperModel
+        from faster_whisper.audio import decode_audio
+
+        audio = decode_audio(str(audio_path.resolve()))
+        duration = len(audio) / 16_000
+        start_sample = int(start_seconds * 16_000)
+        if start_sample >= len(audio):
+            raise ValueError("The transcription start time must be before the end of the recording")
 
         model = WhisperModel(
             str(model_path.resolve()), device="cpu", compute_type="int8", local_files_only=True
         )
         raw_segments, info = model.transcribe(
-            str(audio_path.resolve()),
+            audio[start_sample:],
             task="transcribe",
             language=None if language == "auto" else language,
-            vad_filter=False,
+            vad_filter=True,
         )
-        segments = (
-            Segment(segment.id, float(segment.start), float(segment.end), segment.text.strip())
-            for segment in raw_segments
-        )
-        return segments, ASRInfo(language, info.language, float(info.duration))
+        origin = start_sample / 16_000
+
+        def bounded_segments() -> Iterable[Segment]:
+            for segment in raw_segments:
+                start = min(duration, max(origin, origin + float(segment.start)))
+                end = min(duration, max(start, origin + float(segment.end)))
+                text = segment.text.strip()
+                if start < end and text:
+                    yield Segment(segment.id, start, end, text)
+
+        return bounded_segments(), ASRInfo(language, info.language, duration)

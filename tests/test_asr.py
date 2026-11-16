@@ -3,21 +3,57 @@ import os
 import queue
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
+from fahmm.asr import WhisperASRBackend
 from fahmm.asr_worker import run_asr_worker
 from fahmm.models import ModelManager
 
 
-def blocked_worker(audio_path, model_path, language, output, cancel):
+def blocked_worker(audio_path, model_path, language, output, cancel, start_seconds=0.0):
     def no_network(*args, **kwargs):
         raise AssertionError("ASR attempted a network connection")
 
     socket.socket.connect = no_network
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ.pop("HF_TOKEN", None)
-    run_asr_worker(audio_path, model_path, language, output, cancel)
+    run_asr_worker(audio_path, model_path, language, output, cancel, start_seconds)
+
+
+def test_asr_decodes_selected_range_to_end_and_keeps_source_timestamps(tmp_path, monkeypatch):
+    audio_path = tmp_path / "selected.wav"
+    audio_path.write_bytes(b"local audio fixture")
+    monkeypatch.setattr("fahmm.asr.validate_model_dir", lambda path: None)
+    monkeypatch.setattr(
+        "faster_whisper.audio.decode_audio", lambda path: np.ones(4 * 16_000, dtype=np.float32)
+    )
+    observed = []
+
+    class FakeModel:
+        def __init__(self, path, **kwargs):
+            assert kwargs["local_files_only"] is True
+
+        def transcribe(self, audio, **kwargs):
+            assert kwargs["vad_filter"] is True
+            observed.append((len(audio), kwargs["language"]))
+            return iter(
+                [
+                    SimpleNamespace(id=1, start=0.0, end=1.0, text=" first "),
+                    SimpleNamespace(id=2, start=2.0, end=29.98, text=" last "),
+                ]
+            ), SimpleNamespace(language="vi", duration=3.0)
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", FakeModel)
+    segments, info = WhisperASRBackend().transcribe(audio_path, tmp_path, "vi", 1.0)
+    assert observed == [(3 * 16_000, "vi")]
+    assert [(s.start, s.end, s.text) for s in segments] == [
+        (1.0, 2.0, "first"),
+        (3.0, 4.0, "last"),
+    ]
+    assert info.duration == 4.0
 
 
 def test_spawned_worker_transcribes_local_speech_without_network():
@@ -31,6 +67,10 @@ def test_spawned_worker_transcribes_local_speech_without_network():
     output = context.Queue(maxsize=16)
     cancel = context.Event()
     fixture = Path(__file__).parent / "fixtures" / "jfk.flac"
+    if not fixture.is_file():
+        pytest.skip(
+            "Provide a licensed tests/fixtures/jfk.flac for the real offline ASR smoke test"
+        )
     process = context.Process(
         target=blocked_worker,
         args=(str(fixture), model_path, "en", output, cancel),

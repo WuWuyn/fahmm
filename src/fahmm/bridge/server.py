@@ -249,6 +249,15 @@ class BridgeApplication:
             result = {
                 "runId": self.asr.start(params["meetingId"], params["modelId"], params["language"])
             }
+        elif operation == "asr.startFrom":
+            result = {
+                "runId": self.asr.start(
+                    params["meetingId"],
+                    params["modelId"],
+                    params["language"],
+                    params["startSeconds"],
+                )
+            }
         elif operation == "asr.cancel":
             self.asr.cancel()
             result = {"state": self.asr.snapshot().state}
