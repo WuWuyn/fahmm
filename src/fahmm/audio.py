@@ -59,14 +59,34 @@ class SoundCardCapture:
 
         return sc.all_microphones(include_loopback=True)
 
+    def _default_ids(self) -> dict[str, str | None]:
+        import soundcard as sc
+
+        defaults: dict[str, str | None] = {}
+        for source, get_default in (
+            ("system", sc.default_speaker),
+            ("microphone", sc.default_microphone),
+        ):
+            try:
+                device = get_default()
+                defaults[source] = str(device.id) if device is not None else None
+            except Exception:
+                # A missing Windows default must not hide the other available devices.
+                defaults[source] = None
+        return defaults
+
     def list_devices(self) -> dict[str, list[AudioDevice]]:
         devices = self._microphones()
-        return {
+        result = {
             "system": [AudioDevice(str(item.id), item.name) for item in devices if item.isloopback],
             "microphone": [
                 AudioDevice(str(item.id), item.name) for item in devices if not item.isloopback
             ],
         }
+        defaults = self._default_ids()
+        for source, items in result.items():
+            items.sort(key=lambda item: item.id != defaults[source])
+        return result
 
     def open(self, source: str, device_id: str) -> _SoundCardStream:
         if source not in ("system", "microphone"):

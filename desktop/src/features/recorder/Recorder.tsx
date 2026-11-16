@@ -142,6 +142,7 @@ export function Recorder({ backendReady }: { backendReady: boolean }) {
             {devices.microphone.length === 0 && <option value="">{t("No microphone")}</option>}
             {devices.microphone.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
           </NativeSelect>
+          <p className="hint">{t("Windows default devices are listed first. If the microphone meter stays at 0% while you speak, select another microphone and record again.")}</p>
           <p className="hint">{t("Device access begins only after you press Record.")}</p>
         </Card>
       </div>

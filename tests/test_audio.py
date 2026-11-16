@@ -23,6 +23,9 @@ def test_list_and_open_exact_selected_source(monkeypatch):
     mic = FakeMicrophone("mic-id", False)
     capture = SoundCardCapture()
     monkeypatch.setattr(capture, "_microphones", lambda: [system, mic])
+    monkeypatch.setattr(
+        capture, "_default_ids", lambda: {"system": "speaker-id", "microphone": "mic-id"}
+    )
     devices = capture.list_devices()
     assert [item.id for item in devices["system"]] == ["speaker-id"]
     assert [item.id for item in devices["microphone"]] == ["mic-id"]
@@ -31,6 +34,35 @@ def test_list_and_open_exact_selected_source(monkeypatch):
     assert system.opened and not mic.opened
     with pytest.raises(DeviceUnavailable):
         capture.open("microphone", "speaker-id")
+
+
+def test_windows_defaults_precede_virtual_and_other_devices(monkeypatch):
+    virtual_mic = FakeMicrophone("virtual-mic", False)
+    speakers = FakeMicrophone("speakers", True)
+    headset = FakeMicrophone("headset", False)
+    default_mic = FakeMicrophone("default-mic", False)
+    default_output = FakeMicrophone("default-output", True)
+    capture = SoundCardCapture()
+    all_devices = [virtual_mic, speakers, headset, default_mic, default_output]
+    monkeypatch.setattr(capture, "_microphones", lambda: all_devices)
+    monkeypatch.setattr(
+        capture,
+        "_default_ids",
+        lambda: {
+            "system": "default-output",
+            "microphone": "default-mic",
+        },
+    )
+
+    devices = capture.list_devices()
+
+    assert [device.id for device in devices["system"]] == ["default-output", "speakers"]
+    assert [device.id for device in devices["microphone"]] == [
+        "default-mic",
+        "virtual-mic",
+        "headset",
+    ]
+    assert not any(device.opened for device in all_devices)
 
 
 def test_stream_downmixes_multichannel():

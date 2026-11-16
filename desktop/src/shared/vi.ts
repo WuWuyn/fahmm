@@ -48,6 +48,7 @@ export const vi: Record<string, string> = {
   "Refresh audio devices": "Làm mới thiết bị âm thanh",
   "No system audio device": "Không có thiết bị âm thanh hệ thống",
   "No microphone": "Không có micrô",
+  "Windows default devices are listed first. If the microphone meter stays at 0% while you speak, select another microphone and record again.": "Thiết bị mặc định của Windows được xếp đầu tiên. Nếu mức micrô vẫn là 0% khi bạn nói, hãy chọn micrô khác rồi ghi lại.",
   "Device access begins only after you press Record.": "Ứng dụng chỉ truy cập thiết bị sau khi bạn nhấn Ghi âm.",
   "Recover recordings": "Khôi phục bản ghi",
   "These sessions have saved audio chunks from an earlier interruption.": "Các phiên này còn đoạn âm thanh đã lưu trước khi bị gián đoạn.",
