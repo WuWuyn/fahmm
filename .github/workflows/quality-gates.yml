@@ -24,13 +24,15 @@ jobs:
           version: "0.13.8"
           python-version: "3.12"
       - name: Python tests
-        run: uv run --locked --extra legacy-qt pytest -q -rs --junitxml=pytest-results.xml
+        run: uv run --locked --extra legacy-qt python -m pytest -q -rs --junitxml=pytest-results.xml
       - name: Report skipped tests
         if: always()
         run: python scripts/report_pytest_skips.py pytest-results.xml
       - name: Ruff lint
+        if: always()
         run: uv run --locked --extra legacy-qt ruff check .
       - name: Ruff format
+        if: always()
         run: uv run --locked --extra legacy-qt ruff format --check .
 
   frontend:
