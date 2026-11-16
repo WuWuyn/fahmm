@@ -9,7 +9,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
-  test: { setupFiles: ["./src/test/setup.ts"] },
+  test: { setupFiles: ["./src/test/setup.ts"], maxWorkers: 2 },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
