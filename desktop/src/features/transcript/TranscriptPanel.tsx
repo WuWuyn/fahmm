@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Download, Save, WandSparkles, X } from "lucide-react";
+import { CirclePlay, Copy, Download, Info, Save, Settings2, WandSparkles, X } from "lucide-react";
 import { bridgeCall, exportSaved } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,7 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [language, setLanguage] = useState("vi");
   const [startTime, setStartTime] = useState("00:00");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [status, setStatus] = useState<AsrStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -68,9 +69,10 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
       ? current : listing.activeRunId || listing.runs[0]?.run_id || "");
   }, [meetingId]);
 
-  useEffect(() => { setRun(null); setWorking([]); setSelectedRun(""); setStartTime("00:00"); setMessage("");
+  useEffect(() => { setRun(null); setWorking([]); setSelectedRun(""); setStartTime("00:00"); setSettingsOpen(false); setMessage("");
     void refreshRuns().catch(() => setMessage("Could not load transcript runs."));
   }, [refreshRuns]);
+  useEffect(() => { setSettingsOpen(false); }, [selectedRun]);
   useEffect(() => {
     if (!selectedRun) { setRun(null); setWorking([]); return; }
     let alive = true;
@@ -143,9 +145,16 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
   }
 
   const activeJob = status?.meetingId === meetingId && ["loading", "running", "cancelling"].includes(status.state);
+  const showSetup = !selectedRun || settingsOpen || activeJob || (status?.state === "error" && status.meetingId === meetingId);
   return <section className="document-panel" aria-label={t("Transcript")}>
-    <div className="document-toolbar"><div><h2>{t("Transcript")}</h2><p>{t("Review and correct timestamped speech.")}</p></div>
-      <div className="toolbar-actions">
+    <div className="transcript-heading"><div><h2>{t("Transcript by time")}</h2><p>{working.length > 0
+      ? t("{count} segments in this recording", { count: working.length })
+      : t("Review and correct timestamped speech.")}</p></div>
+      {selectedRun && <Button variant="outline" size="sm" aria-expanded={showSetup} onClick={() => setSettingsOpen((open) => !open)}>
+        <Settings2 size={16} />{t("Transcription options")}</Button>}
+    </div>
+    {showSetup && <div className="transcription-setup">
+      <div className="document-toolbar"><div className="toolbar-actions">
         <Label htmlFor="speech-language">{t("Speech language")}</Label>
         <NativeSelect id="speech-language" value={language} disabled={activeJob} onChange={(event) => setLanguage(event.target.value)}>
           <option value="vi">{t("Vietnamese (default)")}</option><option value="auto">{t("Auto detect")}</option><option value="en">{t("English")}</option>
@@ -154,39 +163,43 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
         {activeJob && <Button variant="secondary" size="sm" onClick={() => void bridgeCall("asr.cancel").catch(() => setMessage("Could not cancel transcription."))}><X size={15} /> {t("Cancel")}</Button>}
         {status?.state === "error" && status.meetingId === meetingId && <Button variant="secondary" size="sm" onClick={() => void startOrRetry(true)}>{t("Retry")}</Button>}
       </div></div>
-    <div className="transcription-start">
-      <Label htmlFor="transcription-start-time">{t("Start transcription at")}</Label>
-      <Input id="transcription-start-time" aria-label={t("Start transcription at")} value={startTime}
-        onChange={(event) => setStartTime(event.target.value)} disabled={activeJob} inputMode="numeric" placeholder="00:00" />
-      <Button variant="secondary" size="sm" disabled={activeJob || audioDurationSeconds <= 0}
-        onClick={() => setStartTime(startTimeLabel(playheadSeconds))}>{t("Use playback position")}</Button>
-      <span className="hint">{t("Transcribes from this time to the end of the selected recording.")}</span>
-    </div>
-    {activeJob && <div className="job-progress"><span>{t(status?.state === "loading" ? "Loading model" : status?.state === "cancelling" ? "Cancelling" : "Transcribing")}</span>
-      <Progress value={status?.progress == null ? null : Math.round(status.progress * 100)} aria-label={t("Transcription progress")} /> <span>{status?.progress == null ? "" : `${Math.round(status.progress * 100)}%`}</span></div>}
-    {status?.state === "error" && status.meetingId === meetingId && <div className="alert" role="alert">{t(status.error || "Transcription failed.")}</div>}
-    <div className="document-toolbar secondary"><Label htmlFor="run-select">{t("Saved run")}</Label>
-      <NativeSelect id="run-select" value={selectedRun} onChange={(event) => {
-        if (dirty && !window.confirm(t("Discard unsaved transcript edits?"))) return;
-        const nextRun = event.target.value;
-        if (!nextRun) return;
-        const previousRun = selectedRun;
-        setSelectedRun(nextRun);
-        void bridgeCall("transcript.select", { meetingId, runId: nextRun }).then(onRunChange)
-          .catch(() => { setSelectedRun(previousRun); setMessage("Could not select this transcript run."); });
-      }}><option value="" disabled={runs.length > 0}>{t("No transcript yet")}</option>
-        {runs.map((item) => <option key={item.run_id} value={item.run_id}>{formatDateTime(item.created_at, languageUI)} · {item.model_repository} · {t("from {time}", { time: startTimeLabel(item.start_seconds ?? 0) })}</option>)}
-      </NativeSelect></div>
-    {!selectedModel && <p className="hint">{t("A local speech model is required. Install one in Models; no cloud fallback is used.")}</p>}
+      <div className="transcription-start">
+        <Label htmlFor="transcription-start-time">{t("Start transcription at")}</Label>
+        <Input id="transcription-start-time" aria-label={t("Start transcription at")} value={startTime}
+          onChange={(event) => setStartTime(event.target.value)} disabled={activeJob} inputMode="numeric" placeholder="00:00" />
+        <Button variant="secondary" size="sm" disabled={activeJob || audioDurationSeconds <= 0}
+          onClick={() => setStartTime(startTimeLabel(playheadSeconds))}>{t("Use playback position")}</Button>
+        <span className="hint">{t("Transcribes from this time to the end of the selected recording.")}</span>
+      </div>
+      {activeJob && <div className="job-progress"><span>{t(status?.state === "loading" ? "Loading model" : status?.state === "cancelling" ? "Cancelling" : "Transcribing")}</span>
+        <Progress value={status?.progress == null ? null : Math.round(status.progress * 100)} aria-label={t("Transcription progress")} /> <span>{status?.progress == null ? "" : `${Math.round(status.progress * 100)}%`}</span></div>}
+      {status?.state === "error" && status.meetingId === meetingId && <div className="alert" role="alert">{t(status.error || "Transcription failed.")}</div>}
+      <div className="document-toolbar secondary"><Label htmlFor="run-select">{t("Saved run")}</Label>
+        <NativeSelect id="run-select" value={selectedRun} onChange={(event) => {
+          if (dirty && !window.confirm(t("Discard unsaved transcript edits?"))) return;
+          const nextRun = event.target.value;
+          if (!nextRun) return;
+          const previousRun = selectedRun;
+          setSelectedRun(nextRun);
+          void bridgeCall("transcript.select", { meetingId, runId: nextRun }).then(onRunChange)
+            .catch(() => { setSelectedRun(previousRun); setMessage("Could not select this transcript run."); });
+        }}><option value="" disabled={runs.length > 0}>{t("No transcript yet")}</option>
+          {runs.map((item) => <option key={item.run_id} value={item.run_id}>{formatDateTime(item.created_at, languageUI)} · {item.model_repository} · {t("from {time}", { time: startTimeLabel(item.start_seconds ?? 0) })}</option>)}
+        </NativeSelect></div>
+      {!selectedModel && <p className="hint">{t("A local speech model is required. Install one in Models; no cloud fallback is used.")}</p>}
+    </div>}
     {working.length === 0 && <div className="empty-document">{t(selectedRun && run
       ? "No speech was detected in this transcription range. Review the selected start time and audio."
       : "No saved transcript for this meeting.")}</div>}
-    <div className="segment-list">{working.map((segment, index) => <div className="segment" key={segment.id}>
-      <Button variant="link" size="xs" className="timestamp-button" onClick={() => onSeek(segment.start)} title={t("Seek audio to this segment")}>{timestamp(segment.start)}</Button>
-      <div><Textarea aria-label={t("Transcript segment {id}", { id: segment.id })} value={segment.text}
+    <div className="segment-list">{working.map((segment, index) => <div className={`segment${playheadSeconds >= segment.start && playheadSeconds < segment.end ? " current" : ""}`} key={segment.id}>
+      <Button variant="ghost" className="timestamp-button" onClick={() => onSeek(segment.start)}
+        aria-label={t("Play audio from {time}", { time: timestamp(segment.start) })}>
+        <CirclePlay size={23} /><span>{timestamp(segment.start)}</span><span aria-hidden="true">– {timestamp(segment.end)}</span></Button>
+      <div className="segment-copy"><Textarea rows={1} aria-label={t("Transcript segment {id}", { id: segment.id })} value={segment.text}
         onChange={(event) => setWorking((current) => current.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />
         {run && segment.text !== run.original[index]?.text && <small>{t("Original ASR:")} {run.original[index]?.text}</small>}
       </div></div>)}</div>
+    {working.length > 0 && <p className="transcript-note"><Info size={17} />{t("Select a timestamp to play the matching audio.")}</p>}
     <div className="document-footer"><Button size="sm" disabled={!dirty || busy} onClick={() => void save()}><Save size={15} /> {t("Save edits")}</Button>
       <Button variant="secondary" size="sm" disabled={!selectedRun} onClick={() => void exportText(true)}><Copy size={15} /> {t("Copy saved")}</Button>
       <Button variant="secondary" size="sm" disabled={!selectedRun} onClick={() => void exportText(false)}><Download size={15} /> {t("Export TXT")}</Button>

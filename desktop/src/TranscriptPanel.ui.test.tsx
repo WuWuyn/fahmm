@@ -56,7 +56,7 @@ it("saves timestamped corrections while retaining original ASR through a remount
   const selected: number[] = [];
   const view = render(<TranscriptPanel meetingId={"a".repeat(32)} onSeek={(seconds) => selected.push(seconds)} onRunChange={() => {}} />);
   await screen.findByRole("textbox", { name: "Transcript segment 1" });
-  await user.click(screen.getByRole("button", { name: "00:12" }));
+  await user.click(screen.getByRole("button", { name: /00:12/ }));
   expect(selected).toEqual([12]);
   await user.clear(screen.getByRole("textbox", { name: "Transcript segment 1" }));
   await user.type(screen.getByRole("textbox", { name: "Transcript segment 1" }), "Chào bạn");

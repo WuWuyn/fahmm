@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { HashRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { AudioLines, ChevronLeft, ChevronRight, ListMusic, Moon, Settings2, Sun, Boxes, RotateCcw, Languages } from "lucide-react";
+import { HashRouter, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { AudioLines, ChevronDown, ChevronLeft, ChevronRight, ListMusic, LockKeyhole, Moon, Settings2, Sun, Boxes, RotateCcw } from "lucide-react";
 import { Recorder } from "@/features/recorder/Recorder";
 import { Meetings } from "@/features/meetings/Meetings";
 import { Models } from "@/features/models/Models";
@@ -9,7 +9,6 @@ import { bridgeStatus, restartBridge } from "@/shared/bridge/client";
 import { useUIStore } from "@/shared/uiStore";
 import { useT } from "@/shared/i18n";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { motion, useReducedMotion } from "motion/react";
 import "@/styles/App.css";
@@ -20,6 +19,22 @@ const areas = [
   { path: "/models", label: "Models", icon: Boxes },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ] as const;
+
+function Topbar({ language, setLanguage }: { language: "en" | "vi"; setLanguage: (language: "en" | "vi") => void }) {
+  const t = useT();
+  const location = useLocation();
+  const current = areas.find((area) => area.path === location.pathname);
+  return <header className="topbar">
+    <div className="topbar-path"><span>{t("Workspace")}</span><span aria-hidden="true">/</span><strong>{t(current?.label ?? "Recorder")}</strong></div>
+    <div className="topbar-actions"><span className="topbar-privacy"><LockKeyhole size={17} />{t("Local by default")}</span>
+      <Button variant="outline" size="sm" className="language-button" type="button"
+        aria-label={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
+        title={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
+        onClick={() => setLanguage(language === "en" ? "vi" : "en")}>
+        <span>{language === "vi" ? "Tiếng Việt" : "English"}</span><ChevronDown size={16} />
+      </Button></div>
+  </header>;
+}
 
 function App() {
   const t = useT();
@@ -85,14 +100,7 @@ function App() {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><span className="topbar-label">{t("Desktop workspace")}</span>
-        <div className="topbar-actions"><Badge variant="outline" className="privacy-badge">{t("Local by default")}</Badge>
-          <Button variant="outline" size="sm" className="language-button" type="button"
-            aria-label={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
-            title={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
-            onClick={() => setLanguage(language === "en" ? "vi" : "en")}>
-            <Languages size={16} /><span>{language === "en" ? "Tiếng Việt" : "English"}</span>
-          </Button></div></header>
+      <Topbar language={language} setLanguage={setLanguage} />
       {!checking && !backendReady && <motion.div className="backend-alert" role="alert"
         initial={reducedMotion ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}>

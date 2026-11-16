@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, Volume2, VolumeX } from "lucide-react";
 import WaveSurfer from "wavesurfer.js";
 import { bridgeCall } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ function timeLabel(value: number): string {
 }
 
 export function AudioPlayer({ meetingId, seekTo, onPositionChange, onDurationChange }: {
-  meetingId: string; seekTo: { seconds: number; nonce: number } | null;
+  meetingId: string; seekTo: { seconds: number; nonce: number; play?: boolean } | null;
   onPositionChange?: (seconds: number) => void; onDurationChange?: (seconds: number) => void;
 }) {
   const t = useT();
@@ -29,6 +29,8 @@ export function AudioPlayer({ meetingId, seekTo, onPositionChange, onDurationCha
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const theme = useUIStore((state) => state.theme);
@@ -42,13 +44,15 @@ export function AudioPlayer({ meetingId, seekTo, onPositionChange, onDurationCha
     setPlaying(false); setPosition(0); onPositionChange?.(0); setDuration(0); onDurationChange?.(0);
     setLoading(true); setError("");
     const wave = WaveSurfer.create({
-      container: container.current, height: 70, barWidth: 3, barGap: 2, barRadius: 2,
-      waveColor: theme === "dark" ? "#54749f" : "#a8c4e9",
-      progressColor: theme === "dark" ? "#76adff" : "#1d5fc7",
+      container: container.current, height: 48, barWidth: 3, barGap: 2, barRadius: 2,
+      waveColor: theme === "dark" ? "#5c82ac" : "#a8c4e9",
+      progressColor: theme === "dark" ? "#80b5ff" : "#1d5fc7",
       cursorColor: theme === "dark" ? "#a9ccff" : "#1d5fc7",
       normalize: false, backend: "MediaElement", dragToSeek: true,
     });
     player.current = wave;
+    wave.setPlaybackRate(speed);
+    wave.setMuted(muted);
     wave.on("play", () => setPlaying(true));
     wave.on("pause", () => setPlaying(false));
     wave.on("finish", () => setPlaying(false));
@@ -81,25 +85,36 @@ export function AudioPlayer({ meetingId, seekTo, onPositionChange, onDurationCha
 
   useEffect(() => {
     player.current?.setOptions({
-      waveColor: theme === "dark" ? "#54749f" : "#a8c4e9",
-      progressColor: theme === "dark" ? "#76adff" : "#1d5fc7",
+      waveColor: theme === "dark" ? "#5c82ac" : "#a8c4e9",
+      progressColor: theme === "dark" ? "#80b5ff" : "#1d5fc7",
       cursorColor: theme === "dark" ? "#a9ccff" : "#1d5fc7",
     });
   }, [theme]);
 
+  useEffect(() => { player.current?.setPlaybackRate(speed); }, [speed]);
+  useEffect(() => { player.current?.setMuted(muted); }, [muted]);
+
   useEffect(() => {
     if (seekTo && player.current && duration > 0) {
       player.current.setTime(Math.min(duration, Math.max(0, seekTo.seconds)));
+      if (seekTo.play) void player.current.play().catch(() => setError("Audio playback is unavailable. Try reopening this meeting."));
     }
   }, [seekTo, duration]);
 
   return <Card className="panel audio-panel" aria-label={t("Meeting audio player")}>
-    <div className="audio-heading"><div><h2>{language === "vi" ? "Bản ghi âm" : "Recording"}</h2><p>{t("Local playback")}</p></div>
-      <span className="audio-time">{timeLabel(position)} / {timeLabel(duration)}</span></div>
-    <div ref={container} className="waveform" aria-label={t("Audio waveform; click to seek")} />
-    <div className="audio-controls"><Button variant="secondary" size="sm" disabled={loading || !!error} onClick={() => void player.current?.playPause()}>
-      {playing ? <Pause size={16} /> : <Play size={16} />} {t(playing ? "Pause" : "Play")}
-    </Button><span className="hint">{t(loading ? "Loading waveform…" : "Select a timestamp or click the waveform to seek.")}</span></div>
+    <div className="audio-heading"><h2>{language === "vi" ? "Bản ghi âm" : "Recording"}</h2></div>
+    <div className="audio-playback"><Button className="audio-play-button" disabled={loading || !!error}
+      aria-label={t(playing ? "Pause" : "Play")} onClick={() => void player.current?.playPause()}>
+      {playing ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
+    </Button><div className="audio-wave-area"><div ref={container} className="waveform" aria-label={t("Audio waveform; click to seek")} />
+      <div className="audio-ticks" aria-hidden="true">{[0, 1, 2, 3].map((tick) => <span key={tick}>{timeLabel(duration * tick / 3)}</span>)}</div></div></div>
+    <div className="audio-controls"><span className="audio-time">{timeLabel(position)} / {timeLabel(duration)}</span>
+      <div className="audio-control-actions"><select aria-label={t("Playback speed")} value={speed}
+        onChange={(event) => setSpeed(Number(event.target.value))}>
+        {[0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
+      </select><Button variant="ghost" size="icon-sm" aria-label={t(muted ? "Unmute audio" : "Mute audio")}
+        onClick={() => setMuted((current) => !current)}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</Button></div></div>
+    {loading && <span className="hint">{t("Loading waveform…")}</span>}
     {error && <div className="alert" role="alert">{t(error)}</div>}
   </Card>;
 }

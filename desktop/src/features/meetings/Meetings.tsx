@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FileAudio, FolderOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { AudioLines, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { AudioPlayer } from "./AudioPlayer";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
 import { TranscriptPanel } from "@/features/transcript/TranscriptPanel";
@@ -7,6 +7,8 @@ import { bridgeCall, importAudio } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDate, formatDateTime, useT } from "@/shared/i18n";
 import { useUIStore } from "@/shared/uiStore";
@@ -16,13 +18,23 @@ type Meeting = {
   recording_state: string; processing_state: string; privacy_mode: string;
 };
 
+function timeLabel(seconds: number): string {
+  const whole = Math.floor(seconds);
+  return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+function createdTime(value: string, language: "en" | "vi"): string {
+  return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
 export function Meetings({ backendReady }: { backendReady: boolean }) {
   const t = useT();
   const language = useUIStore((state) => state.language);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"transcript" | "minutes">("transcript");
-  const [seekTo, setSeekTo] = useState<{ seconds: number; nonce: number } | null>(null);
+  const [seekTo, setSeekTo] = useState<{ seconds: number; nonce: number; play?: boolean } | null>(null);
   const [playheadSeconds, setPlayheadSeconds] = useState(0);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
   const [runVersion, setRunVersion] = useState(0);
@@ -80,31 +92,52 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   const selected = meetings.find((meeting) => meeting.id === selectedId);
-  const seek = (seconds: number) => setSeekTo({ seconds, nonce: Date.now() });
+  const handleRunChange = useCallback(() => setRunVersion((version) => version + 1), []);
+  const visibleMeetings = meetings.filter((meeting) => meeting.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const today = new Date().toDateString();
+  const groups = [
+    { label: t("Today"), items: visibleMeetings.filter((meeting) => new Date(meeting.created_at).toDateString() === today) },
+    { label: t("Earlier"), items: visibleMeetings.filter((meeting) => new Date(meeting.created_at).toDateString() !== today) },
+  ];
+  const statusLabel = (meeting: Meeting) => {
+    if (meeting.recording_state !== "completed") return t("Recording needs attention");
+    if (meeting.processing_state === "completed") return t("Transcript ready");
+    if (meeting.processing_state === "running") return t("Transcribing…");
+    if (["error", "cancelled"].includes(meeting.processing_state)) return t("Transcription needs attention");
+    return t("Not transcribed yet");
+  };
+  const seek = (seconds: number) => setSeekTo({ seconds, nonce: Date.now(), play: true });
   return <section className="page meetings-page" aria-labelledby="meetings-heading">
-    <div className="page-heading"><div><div className="eyebrow">{t("LIBRARY")}</div><h1 id="meetings-heading">{t("Meetings")}</h1>
-      <p>{t("Recordings and documents stay in your local meeting library.")}</p></div>
-      <Button disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={16} /> {t("Import audio")}</Button>
-    </div>
-    {message && <div className="alert" role="alert">{t(message)}</div>}
-    <div className="meetings-layout"><Card className="panel meeting-list" role="complementary" aria-label={t("Saved meetings")}>
-      <div className="panel-heading"><h2>{t("Saved meetings")}</h2><span className="count-badge">{meetings.length}</span></div>
+    <div className="meetings-layout"><aside className="meeting-list" aria-label={t("Saved meetings")}>
+      <div className="meeting-list-header"><h1 id="meetings-heading">{t("Meetings")}</h1><span className="count-badge">{meetings.length}</span></div>
+      <Button variant="outline" className="meeting-import" disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={19} /> {t("Import audio")}</Button>
+      <div className="meeting-search"><Search size={18} aria-hidden="true" /><Input aria-label={t("Search meetings")} placeholder={t("Search meetings…")}
+        value={query} onChange={(event) => setQuery(event.target.value)} /></div>
       {!backendReady && meetings.length === 0 && <p>{t("Connect the local backend to load meetings.")}</p>}
       {backendReady && loading && <p>{t("Loading meetings…")}</p>}
       {backendReady && !loading && meetings.length === 0 && <div className="library-empty"><FolderOpen size={26} /><p>{t("No meetings yet. Record or import audio to begin.")}</p></div>}
-      {meetings.map((meeting) => <button key={meeting.id} className={`meeting-row${meeting.id === selectedId ? " selected" : ""}`}
-        onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
-        <span className="meeting-icon"><FileAudio size={17} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
-          <small>{formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small></span>
-        <Badge variant="outline" className={`meeting-privacy-label${meeting.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(meeting.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
-      </button>)}
-    </Card>
-    <div className="meeting-detail">{selected ? <>
-      <div className="detail-title"><div><div className="eyebrow">{t("MEETING")}</div><h2>{selected.name}</h2>
-        <p>{formatDateTime(selected.created_at, language)} · {t(selected.source_kind)}</p></div>
+      {backendReady && !loading && meetings.length > 0 && visibleMeetings.length === 0 &&
+        <p className="meeting-search-empty">{t("No meetings match your search.")}</p>}
+      {groups.map((group) => group.items.length > 0 && <div className="meeting-group" key={group.label}>
+        <h2>{group.label}</h2>
+        {group.items.map((meeting) => <button key={meeting.id} className={`meeting-row${meeting.id === selectedId ? " selected" : ""}`}
+          aria-current={meeting.id === selectedId ? "true" : undefined}
+          onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
+          <span className="meeting-icon"><AudioLines size={20} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
+            <small>{group.label === t("Today") ? createdTime(meeting.created_at, language) : formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small>
+            <small className="meeting-row-status">{statusLabel(meeting)}</small></span>
+        </button>)}
+      </div>)}
+    </aside>
+    <div className="meeting-detail">{message && <div className="alert" role="alert">{t(message)}</div>}{selected ? <>
+      <div className="detail-title"><div className="detail-title-copy"><div className="detail-name"><h2>{selected.name}</h2>
+          <Button variant="ghost" size="icon-sm" aria-label={t("Rename {name}", { name: selected.name })} onClick={() => void renameMeeting(selected)}><Pencil size={18} /></Button></div>
+        <p>{formatDateTime(selected.created_at, language)} · {t(selected.source_kind)}{audioDurationSeconds > 0 && <> · {timeLabel(audioDurationSeconds)}</>}</p></div>
         <div className="detail-actions"><Badge variant="outline" className={`privacy-badge${selected.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(selected.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
-          <Button variant="ghost" size="icon-sm" aria-label={t("Rename {name}", { name: selected.name })} onClick={() => void renameMeeting(selected)}><Pencil size={16} /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label={t("Delete {name}", { name: selected.name })} onClick={() => void deleteMeeting(selected)}><Trash2 size={16} /></Button></div></div>
+          <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="icon-sm" aria-label={t("More meeting actions")}><MoreHorizontal size={19} /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void renameMeeting(selected)}><Pencil size={15} />{t("Rename meeting")}</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => void deleteMeeting(selected)}><Trash2 size={15} />{t("Delete meeting")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+        </div></div>
       {selected.recording_state === "completed" ? <AudioPlayer meetingId={selected.id} seekTo={seekTo}
           onPositionChange={setPlayheadSeconds} onDurationChange={setAudioDurationSeconds} />
         : <div className="panel audio-panel">{t("Recover or finish this recording before playback.")}</div>}
@@ -115,7 +148,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
         </TabsList>
         <TabsContent value="transcript" className="panel document-surface"><TranscriptPanel meetingId={selected.id} onSeek={seek}
           playheadSeconds={playheadSeconds} audioDurationSeconds={audioDurationSeconds}
-          onRunChange={() => setRunVersion((version) => version + 1)} /></TabsContent>
+          onRunChange={handleRunChange} /></TabsContent>
         <TabsContent value="minutes" className="panel document-surface"><MinutesPanel meetingId={selected.id} privacyMode={selected.privacy_mode}
             onPrivacyChange={(mode) => setMeetings((current) => current.map((item) => item.id === selected.id ? { ...item, privacy_mode: mode } : item))}
             onSeek={seek} onOpenSource={(runId, seconds) => {
