@@ -62,6 +62,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.12"
+      - name: Build and smoke bundled sidecar
+        working-directory: .
+        run: uv run --locked --group build python scripts/build_sidecar.py
+      - name: Show sidecar build failure
+        if: failure()
+        working-directory: .
+        run: if (Test-Path .build/sidecar-build.log) { Get-Content .build/sidecar-build.log -Tail 100 }
       - run: cargo test --lib
 
   openspec:
