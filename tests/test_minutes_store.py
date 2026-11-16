@@ -52,7 +52,12 @@ def test_versions_approval_edits_and_reopen_preserve_content(tmp_path):
     )
     assert len({first, edited, regenerated}) == 3
     assert store.read_version(meeting_id, first) == original
-    assert store.read_version(meeting_id, edited)["manifest"]["review_state"] == "unverified"
+    edited_manifest = store.read_version(meeting_id, edited)["manifest"]
+    assert edited_manifest["review_state"] == "unverified"
+    assert edited_manifest["parent_version_id"] == first
+    assert edited_manifest["source_origin"] == "extractive"
+    assert original["manifest"]["parent_version_id"] is None
+    assert original["manifest"]["source_origin"] == "extractive"
     assert (
         store.read_version(meeting_id, edited)["content"]["decisions"][0]["text"]
         == "User correction"
@@ -63,6 +68,35 @@ def test_versions_approval_edits_and_reopen_preserve_content(tmp_path):
     reopened.select_version(meeting_id, first)
     assert reopened.active_version(meeting_id)["manifest"]["review_state"] == "approved"
     assert TranscriptStore(MeetingStore(tmp_path)).active_run(meeting_id)["working"][0]["id"] == 1
+
+
+def test_edited_lineage_survives_multiple_edits_and_rejects_parentless_edits(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
+    store = MinutesStore(meetings)
+    first = store.save_version(meeting_id, run_id, "provider", sample_content(run_id), "prompt")
+    second = store.edit_version(meeting_id, first, sample_content(run_id, "First edit"))
+    third = store.edit_version(meeting_id, second, sample_content(run_id, "Second edit"))
+    assert store.read_version(meeting_id, second)["manifest"]["parent_version_id"] == first
+    third_manifest = store.read_version(meeting_id, third)["manifest"]
+    assert third_manifest["parent_version_id"] == second
+    assert third_manifest["source_origin"] == "provider"
+    with pytest.raises(ValueError, match="parent version"):
+        store.save_version(meeting_id, run_id, "user_edit", sample_content(run_id), "prompt")
+
+
+def test_editing_legacy_minutes_keeps_known_origin_without_rewriting_parent(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
+    store = MinutesStore(meetings)
+    first = store.save_version(meeting_id, run_id, "extractive", sample_content(run_id), "default")
+    path = store._version_dir(meeting_id, first) / "manifest.json"
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    legacy["schema_version"] = 1
+    del legacy["source_origin"]
+    del legacy["parent_version_id"]
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    edited = store.edit_version(meeting_id, first, sample_content(run_id, "Correction"))
+    assert store.read_version(meeting_id, edited)["manifest"]["source_origin"] == "extractive"
+    assert store.read_version(meeting_id, first)["manifest"] == legacy
 
 
 def test_invalid_source_and_interrupted_commit_leave_prior_data(tmp_path, monkeypatch):

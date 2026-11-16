@@ -31,7 +31,7 @@ Check a task only when the named evidence exists for the **current target commit
 
 - [ ] 3.1 AT-05: in Restricted mode, produce an offline source-linked **extractive** minutes draft from reviewed transcript with network blocked; verify zero content egress and no provider key dependency.
 - [ ] 3.2 AT-09: use transcript with missing owner, due date or decision; verify “Chưa rõ”, source references, timestamp seek and no unsupported invented assertions.
-- [ ] 3.3 Edit, approve, regenerate, reopen and export minutes; verify the previous approved version remains unchanged, current edit persists and source IDs resolve.
+- [ ] 3.3 Edit, approve, regenerate, reopen and export minutes; verify the previous approved version remains unchanged, current edit persists, source IDs resolve, edited versions disclose parent/original origin, and any action items remain labeled as suggestions regardless of structured action-list contents.
 - [ ] 3.4 AT-06–08: direct-bridge Restricted cloud request rejected; Cloud permitted preview displays destination and exact selected reviewed text; Cancel makes zero sends; Confirm makes only one authorized send.
 - [ ] 3.5 Change a segment/profile/privacy state after preview or replay an expired/used confirmation; verify request denial and fresh review required. On timeout/provider error, ensure local original and approved versions survive.
 - [ ] 3.6 Verify provider credentials never enter webview reads, export, diagnostics or logs; attest privacy scope for any new provider operation.

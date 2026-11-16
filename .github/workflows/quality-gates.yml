@@ -1,0 +1,118 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  OPENSPEC_TELEMETRY: "0"
+
+jobs:
+  python:
+    name: Python tests and style
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.12"
+      - name: Python tests
+        run: uv run --locked --extra legacy-qt pytest -q -rs --junitxml=pytest-results.xml
+      - name: Report skipped tests
+        if: always()
+        run: python scripts/report_pytest_skips.py pytest-results.xml
+      - name: Ruff lint
+        run: uv run --locked --extra legacy-qt ruff check .
+      - name: Ruff format
+        run: uv run --locked --extra legacy-qt ruff format --check .
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm test -- --run
+      - run: npm run build
+
+  rust:
+    name: Rust host tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.12"
+      - name: Build and smoke bundled sidecar
+        working-directory: .
+        run: uv run --locked --group build python scripts/build_sidecar.py
+      - name: Show sidecar build failure
+        if: failure()
+        working-directory: .
+        run: if (Test-Path .build/sidecar-build.log) { Get-Content .build/sidecar-build.log -Tail 100 }
+      - run: cargo test --lib
+
+  openspec:
+    name: OpenSpec validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: npm install --global @fission-ai/openspec@2.0.0
+      - run: openspec validate --all --strict --no-interactive
+
+  traceability:
+    name: PR traceability
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: python scripts/check_pr_traceability.py "$GITHUB_EVENT_PATH"
+
+  quality-gates:
+    name: Quality gates complete
+    if: always()
+    needs: [python, frontend, rust, openspec, traceability]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable gate
+        env:
+          PYTHON_RESULT: ${{ needs.python.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          OPENSPEC_RESULT: ${{ needs.openspec.result }}
+          TRACEABILITY_RESULT: ${{ needs.traceability.result }}
+        run: |
+          for result in "$PYTHON_RESULT" "$FRONTEND_RESULT" "$RUST_RESULT" "$OPENSPEC_RESULT"; do
+            if [ "$result" != "success" ]; then exit 1; fi
+          done
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$TRACEABILITY_RESULT" != "success" ]; then exit 1; fi

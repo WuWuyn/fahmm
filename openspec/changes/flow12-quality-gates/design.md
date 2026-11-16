@@ -76,7 +76,7 @@ Current logical identities:
 
 - Meeting ID owns recordings, transcript runs and minutes versions.
 - Transcript run has immutable original and editable working content; source segment IDs and timestamps link derived facts.
-- Minutes versions preserve source references and an approval state; new generations must not overwrite approved versions.
+- Minutes versions preserve source references and an approval state; new generations must not overwrite approved versions. New edited versions retain an immediate `parent_version_id` and the original extractive or provider `source_origin`. Legacy edited versions with no recoverable origin must be labeled unknown rather than assigned a guessed source.
 
 Proposed **future** action item entity (not current code):
 

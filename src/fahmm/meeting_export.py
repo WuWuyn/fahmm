@@ -140,8 +140,25 @@ class MeetingExportService:
             lines.append(
                 "> Draft type: Provider-generated draft; verify claims against the source."
             )
-        if content.get("actions"):
-            lines.append("> Action entries are suggestions, not assigned or tracked tasks.")
+        elif manifest["origin"] == "user_edit":
+            if manifest.get("source_origin") == "extractive":
+                lines.append(
+                    "> Draft type: Edited from an offline extractive draft; "
+                    "user edits have not been automatically verified."
+                )
+            elif manifest.get("source_origin") == "provider":
+                lines.append(
+                    "> Draft type: Edited from a provider-generated draft; "
+                    "user edits have not been automatically verified."
+                )
+            else:
+                lines.append(
+                    "> Draft type: Edited version; original draft type unavailable. "
+                    "User edits have not been automatically verified."
+                )
+        lines.append(
+            "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
+        )
         lines.extend(("", body))
         if content.get("user_text") is not None:
             citations = {

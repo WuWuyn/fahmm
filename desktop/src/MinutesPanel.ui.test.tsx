@@ -9,12 +9,14 @@ vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportSaved: vi.
 
 let versionId: string | null;
 let previewCount: number;
+let minutesOrigin: string;
+let sourceOrigin: string | null;
 beforeEach(() => {
-  versionId = null; previewCount = 0;
+  versionId = null; previewCount = 0; minutesOrigin = "extractive"; sourceOrigin = "extractive";
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
-      case "minutes.list": return { versions: versionId ? [{ version_id: versionId, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: "extractive" }] : [], activeVersionId: versionId };
-      case "minutes.read": return { version: { manifest: { version_id: versionId, run_id: "r".repeat(32), created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: "extractive" }, content: { user_text: "# Bản nháp" } } };
+      case "minutes.list": return { versions: versionId ? [{ version_id: versionId, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin }] : [], activeVersionId: versionId };
+      case "minutes.read": return { version: { manifest: { version_id: versionId, run_id: "r".repeat(32), created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin }, content: { user_text: "# Bản nháp", actions: [] } } };
       case "minutes.renderBody": return { markdown: "# Bản nháp" };
       case "minutes.template": return { template: { headings: { title: "Tiêu đề" }, guidance: "Review sources", topic_limit: 5 } };
       case "provider.list": return { profiles: [{ id: "p".repeat(32), name: "Provider", model_id: "model", hasKey: false }] };
@@ -33,6 +35,15 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+
+it("shows draft provenance and action caveat for edited Markdown without structured actions", async () => {
+  versionId = "m".repeat(32);
+  minutesOrigin = "user_edit";
+  sourceOrigin = "extractive";
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  expect(await screen.findByText("Edited from an offline extractive draft; user edits have not been automatically verified.")).toBeTruthy();
+  expect(screen.getByText("Any action items in these minutes are suggestions, not assigned or tracked tasks.")).toBeTruthy();
+});
 
 it("keeps Restricted meetings offline and labels drafts unverified", async () => {
   const user = userEvent.setup();

@@ -2,6 +2,8 @@
 
 Use this form in every implementation PR after adopting the proposed gate policy. Do not confuse it with an already installed GitHub branch-protection rule.
 
+The PR template and `scripts/check_pr_traceability.py` enforce a minimum requirement/gate/OpenSpec mapping in CI. The workflow also runs repository-wide Ruff formatting; earlier evidence recorded 65 pre-existing unformatted files, so that baseline must be resolved in a separate formatting change before the format check can pass.
+
 ## Scope
 
 - PR title and link:

@@ -90,11 +90,30 @@ class MinutesStore:
         content: dict,
         template: str,
         provider_id: str | None = None,
+        *,
+        parent_version_id: str | None = None,
     ) -> str:
         if origin not in ("extractive", "provider", "user_edit"):
             raise ValueError("Invalid minutes origin")
         if not isinstance(content, dict) or not isinstance(template, str):
             raise TypeError("Invalid minutes content")
+        if origin == "user_edit":
+            if parent_version_id is None:
+                raise ValueError("Edited minutes require a parent version")
+            parent_manifest = self.read_version(meeting_id, parent_version_id)["manifest"]
+            if parent_manifest["run_id"] != run_id:
+                raise ValueError("Edited minutes must use the parent transcript run")
+            source_origin = parent_manifest.get("source_origin")
+            if source_origin not in ("extractive", "provider"):
+                source_origin = (
+                    parent_manifest["origin"]
+                    if parent_manifest["origin"] in ("extractive", "provider")
+                    else None
+                )
+        else:
+            if parent_version_id is not None:
+                raise ValueError("Only edited minutes can have a parent version")
+            source_origin = origin
         run = self.transcripts.read_run(meeting_id, run_id)
         valid_ids = {segment["id"] for segment in run["working"]}
         self._validate_sources(content, run_id, valid_ids)
@@ -104,10 +123,12 @@ class MinutesStore:
         staging = target.parent / f".version-{version_id}"
         staging.mkdir(exist_ok=False)
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "version_id": version_id,
             "run_id": run_id,
             "origin": origin,
+            "parent_version_id": parent_version_id,
+            "source_origin": source_origin,
             "provider_id": provider_id,
             "created_at": datetime.now(UTC).isoformat(),
             "review_state": "unverified",
@@ -193,6 +214,7 @@ class MinutesStore:
             copy.deepcopy(content),
             manifest["template"],
             manifest["provider_id"],
+            parent_version_id=version_id,
         )
 
     def approve_version(self, meeting_id: str, version_id: str) -> None:
