@@ -10,9 +10,15 @@ from fahmm.models import InstalledModel
 
 
 def call(app, operation, **params):
-    reply = app.handle({
-        "v": 1, "kind": "request", "id": "test", "op": operation, "params": params,
-    })
+    reply = app.handle(
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "test",
+            "op": operation,
+            "params": params,
+        }
+    )
     encode_frame(reply)
     assert reply["kind"] == "response"
     return reply["result"]
@@ -35,13 +41,22 @@ def test_import_transcript_and_minutes_preserve_history(tmp_path):
     assert detail["source_kind"] == "imported"
     assert "recording" not in detail
     assert [item["id"] for item in call(app, "meeting.list")["meetings"]] == [meeting]
-    assert call(app, "meeting.rename", meetingId=meeting, name="Review")["meeting"]["name"] == "Review"
+    assert (
+        call(app, "meeting.rename", meetingId=meeting, name="Review")["meeting"]["name"] == "Review"
+    )
 
     run_id = "a" * 32
     model = InstalledModel("b" * 32, "repo/model", "repo", "MIT", "c" * 40, 100, tmp_path)
-    app.transcripts.save_run(meeting, run_id, model, "vi", {"duration": 1.0}, [
-        {"id": 0, "start": 0.0, "end": 1.0, "text": "Xin chào"},
-    ])
+    app.transcripts.save_run(
+        meeting,
+        run_id,
+        model,
+        "vi",
+        {"duration": 1.0},
+        [
+            {"id": 0, "start": 0.0, "end": 1.0, "text": "Xin chào"},
+        ],
+    )
     assert call(app, "transcript.list", meetingId=meeting)["activeRunId"] == run_id
     call(app, "transcript.saveEdits", meetingId=meeting, runId=run_id, edits={"0": "Chào bạn"})
     run = call(app, "transcript.read", meetingId=meeting, runId=run_id)["run"]
@@ -49,14 +64,32 @@ def test_import_transcript_and_minutes_preserve_history(tmp_path):
     assert run["working"][0]["text"] == "Chào bạn"
     assert call(app, "transcript.select", meetingId=meeting, runId=run_id)["activeRunId"] == run_id
 
-    first = app.minutes.save_version(meeting, run_id, "extractive", {"user_text": "Bản gốc"}, "default")
+    first = app.minutes.save_version(
+        meeting, run_id, "extractive", {"user_text": "Bản gốc"}, "default"
+    )
     call(app, "minutes.approve", meetingId=meeting, versionId=first)
-    second = call(app, "minutes.edit", meetingId=meeting, versionId=first,
-                  content={"user_text": "Bản sửa"})["versionId"]
+    second = call(
+        app, "minutes.edit", meetingId=meeting, versionId=first, content={"user_text": "Bản sửa"}
+    )["versionId"]
     assert second != first
-    assert call(app, "minutes.read", meetingId=meeting, versionId=first)["version"]["manifest"]["review_state"] == "approved"
-    assert call(app, "minutes.read", meetingId=meeting, versionId=first)["version"]["content"]["user_text"] == "Bản gốc"
-    assert call(app, "minutes.read", meetingId=meeting, versionId=second)["version"]["manifest"]["review_state"] == "unverified"
+    assert (
+        call(app, "minutes.read", meetingId=meeting, versionId=first)["version"]["manifest"][
+            "review_state"
+        ]
+        == "approved"
+    )
+    assert (
+        call(app, "minutes.read", meetingId=meeting, versionId=first)["version"]["content"][
+            "user_text"
+        ]
+        == "Bản gốc"
+    )
+    assert (
+        call(app, "minutes.read", meetingId=meeting, versionId=second)["version"]["manifest"][
+            "review_state"
+        ]
+        == "unverified"
+    )
     assert call(app, "minutes.list", meetingId=meeting)["activeVersionId"] == second
     call(app, "minutes.select", meetingId=meeting, versionId=first)
     assert call(app, "minutes.list", meetingId=meeting)["activeVersionId"] == first
@@ -92,11 +125,16 @@ def test_template_and_cleanup_operations_keep_other_meetings(tmp_path):
     template = call(app, "minutes.template", meetingId=first)["template"]
     template["headings"]["title"] = "Tiêu đề mới"
     assert call(app, "minutes.saveTemplate", meetingId=first, template=template)["saved"]
-    assert call(app, "minutes.template", meetingId=first)["template"]["headings"]["title"] == "Tiêu đề mới"
-    assert call(app, "minutes.template", meetingId=second)["template"]["headings"]["title"] != "Tiêu đề mới"
+    assert (
+        call(app, "minutes.template", meetingId=first)["template"]["headings"]["title"]
+        == "Tiêu đề mới"
+    )
+    assert (
+        call(app, "minutes.template", meetingId=second)["template"]["headings"]["title"]
+        != "Tiêu đề mới"
+    )
     with pytest.raises(ValueError):
-        call(app, "minutes.saveTemplate", meetingId=first,
-             template={**template, "topic_limit": 0})
+        call(app, "minutes.saveTemplate", meetingId=first, template={**template, "topic_limit": 0})
     assert call(app, "meeting.delete", meetingId=first)["deleted"]
     assert [item["id"] for item in call(app, "meeting.list")["meetings"]] == [second]
     orphan = "c" * 32

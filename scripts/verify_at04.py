@@ -33,8 +33,7 @@ def main() -> None:
     model = manager.download(COMPATIBLE, progress=progress)
     assert manager.select(model.id).id == model.id
     assert ModelManager(root).selected().revision == model.revision
-    assert any(stage == "Downloading model files" and current > 0
-               for stage, current, _ in events)
+    assert any(stage == "Downloading model files" and current > 0 for stage, current, _ in events)
 
     original_connect = socket.socket.connect
 

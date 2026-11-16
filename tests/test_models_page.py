@@ -27,8 +27,15 @@ class FakeManager:
         if repository == "bad/repo":
             raise ValueError("Incompatible repository")
         progress("Downloading model files", 1, 2)
-        model = InstalledModel(uuid.uuid4().hex, repository, "Systran", "MIT", "a" * 40,
-                               148_000_000, self.root / "model")
+        model = InstalledModel(
+            uuid.uuid4().hex,
+            repository,
+            "Systran",
+            "MIT",
+            "a" * 40,
+            148_000_000,
+            self.root / "model",
+        )
         self.items.append(model)
         self.selected_id = model.id
         return model

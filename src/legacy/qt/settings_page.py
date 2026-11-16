@@ -101,8 +101,11 @@ class SettingsPage(QWidget):
     def save_profile(self) -> None:
         try:
             profile = self.profiles.save(
-                self.name_edit.text(), self.url_edit.text(), self.model_edit.text(),
-                self.timeout_spin.value(), profile_id=self.profile_box.currentData(),
+                self.name_edit.text(),
+                self.url_edit.text(),
+                self.model_edit.text(),
+                self.timeout_spin.value(),
+                profile_id=self.profile_box.currentData(),
                 api_key=self.key_edit.text() or None,
             )
         except (OSError, ValueError, TypeError, RuntimeError) as exc:
@@ -117,8 +120,14 @@ class SettingsPage(QWidget):
             return
         try:
             profile = self.profiles.get(profile_id)
-            self.profiles.save(profile.name, profile.base_url, profile.model_id,
-                               profile.timeout_seconds, profile_id=profile.id, api_key="")
+            self.profiles.save(
+                profile.name,
+                profile.base_url,
+                profile.model_id,
+                profile.timeout_seconds,
+                profile_id=profile.id,
+                api_key="",
+            )
         except (OSError, ValueError, RuntimeError) as exc:
             self.status_label.setText(f"Could not remove key: {exc}")
             return
@@ -129,7 +138,9 @@ class SettingsPage(QWidget):
         profile_id = self.profile_box.currentData()
         if not profile_id:
             return
-        answer = QMessageBox.question(self, "Delete provider", "Delete this provider profile and key?")
+        answer = QMessageBox.question(
+            self, "Delete provider", "Delete this provider profile and key?"
+        )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:

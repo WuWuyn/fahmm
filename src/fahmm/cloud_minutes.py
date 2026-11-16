@@ -91,7 +91,9 @@ class DisclosureAuthorization:
 
 class CloudMinutesService:
     def __init__(
-        self, meetings: MeetingStore, profiles: ProviderProfiles,
+        self,
+        meetings: MeetingStore,
+        profiles: ProviderProfiles,
         transport: Callable[[CloudRequestSnapshot, str | None], object] | None = None,
     ) -> None:
         self.meetings = meetings
@@ -103,8 +105,14 @@ class CloudMinutesService:
         self._authorization_lock = threading.Lock()
 
     def prepare(
-        self, meeting_id: str, profile_id: str, selected_ids: set[int],
-        reviewed_ids: set[int], *, prompt: str = DEFAULT_PROMPT, max_tokens: int = 2000,
+        self,
+        meeting_id: str,
+        profile_id: str,
+        selected_ids: set[int],
+        reviewed_ids: set[int],
+        *,
+        prompt: str = DEFAULT_PROMPT,
+        max_tokens: int = 2000,
     ) -> CloudRequestSnapshot:
         if self.meetings.privacy_mode(meeting_id) != "cloud_permitted":
             raise PermissionError("This meeting is Internal/Restricted")
@@ -124,14 +132,18 @@ class CloudMinutesService:
         if len(selected) != len(selected_ids):
             raise ValueError("Some selected transcript segments no longer exist")
         segments = tuple(
-            SelectedSegment(segment["id"], float(segment["start"]),
-                            float(segment["end"]), segment["text"])
+            SelectedSegment(
+                segment["id"], float(segment["start"]), float(segment["end"]), segment["text"]
+            )
             for segment in selected
         )
-        return CloudRequestSnapshot(meeting_id, run_id, profile, prompt.strip(), max_tokens,
-                                    segments)
+        return CloudRequestSnapshot(
+            meeting_id, run_id, profile, prompt.strip(), max_tokens, segments
+        )
 
-    def confirm(self, snapshot: CloudRequestSnapshot, accepted: bool) -> DisclosureAuthorization | None:
+    def confirm(
+        self, snapshot: CloudRequestSnapshot, accepted: bool
+    ) -> DisclosureAuthorization | None:
         if not accepted:
             return None
         self._check_current(snapshot)
@@ -142,16 +154,21 @@ class CloudMinutesService:
 
     def _check_current(self, snapshot: CloudRequestSnapshot) -> None:
         current = self.prepare(
-            snapshot.meeting_id, snapshot.profile.id,
+            snapshot.meeting_id,
+            snapshot.profile.id,
             {segment.id for segment in snapshot.segments},
             {segment.id for segment in snapshot.segments},
-            prompt=snapshot.prompt, max_tokens=snapshot.max_tokens,
+            prompt=snapshot.prompt,
+            max_tokens=snapshot.max_tokens,
         )
         if current.digest != snapshot.digest:
-            raise PermissionError("The meeting, provider, or transcript changed; review the payload again")
+            raise PermissionError(
+                "The meeting, provider, or transcript changed; review the payload again"
+            )
 
     def send(
-        self, snapshot: CloudRequestSnapshot,
+        self,
+        snapshot: CloudRequestSnapshot,
         authorization: DisclosureAuthorization | None,
     ) -> object:
         if authorization is None:
@@ -176,14 +193,16 @@ class CloudMinutesService:
             self.meetings.end_cloud_send(snapshot.meeting_id)
 
     def generate(
-        self, snapshot: CloudRequestSnapshot,
+        self,
+        snapshot: CloudRequestSnapshot,
         authorization: DisclosureAuthorization | None,
     ) -> str:
         with self.meetings.activity(snapshot.meeting_id, "provider_generation"):
             return self._generate(snapshot, authorization)
 
     def _generate(
-        self, snapshot: CloudRequestSnapshot,
+        self,
+        snapshot: CloudRequestSnapshot,
         authorization: DisclosureAuthorization | None,
     ) -> str:
         from fahmm.provider_minutes import normalize_provider_minutes
@@ -195,8 +214,14 @@ class CloudMinutesService:
                 raw, snapshot, self.meetings.metadata(snapshot.meeting_id)
             )
         except (TypeError, ValueError):
-            raise ProviderError("format", "Provider returned unusable minutes; retry or change provider") from None
+            raise ProviderError(
+                "format", "Provider returned unusable minutes; retry or change provider"
+            ) from None
         return self.minutes.save_version(
-            snapshot.meeting_id, snapshot.run_id, "provider", content,
-            snapshot.prompt, snapshot.profile.id,
+            snapshot.meeting_id,
+            snapshot.run_id,
+            "provider",
+            content,
+            snapshot.prompt,
+            snapshot.profile.id,
         )

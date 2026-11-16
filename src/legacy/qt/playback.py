@@ -50,7 +50,8 @@ class AudioPlayer(QObject):
         self._pending = b""
         self._eof = False
         thread = threading.Thread(
-            target=self._decode, args=(Path(path), start_seconds, self._stop, self._queue),
+            target=self._decode,
+            args=(Path(path), start_seconds, self._stop, self._queue),
             daemon=True,
         )
         thread.start()

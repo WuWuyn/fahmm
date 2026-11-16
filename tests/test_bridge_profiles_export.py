@@ -26,9 +26,15 @@ class FakeCredentials:
 
 
 def call(app, operation, **params):
-    reply = app.handle({
-        "v": 1, "kind": "request", "id": "test", "op": operation, "params": params,
-    })
+    reply = app.handle(
+        {
+            "v": 1,
+            "kind": "request",
+            "id": "test",
+            "op": operation,
+            "params": params,
+        }
+    )
     encode_frame(reply)
     assert reply["kind"] == "response"
     return reply["result"]
@@ -39,8 +45,16 @@ def test_profile_redaction_and_saved_exports(tmp_path):
     credentials = FakeCredentials()
     app.profiles = ProviderProfiles(tmp_path / "data" / "providers.json", credentials)
     call(app, "session.hello", versions=[1])
-    saved = call(app, "provider.save", name="Cloud", baseUrl="https://example.org/v1",
-                 modelId="gpt-test", timeoutSeconds=30, profileId=None, apiKey="secret-value")
+    saved = call(
+        app,
+        "provider.save",
+        name="Cloud",
+        baseUrl="https://example.org/v1",
+        modelId="gpt-test",
+        timeoutSeconds=30,
+        profileId=None,
+        apiKey="secret-value",
+    )
     profile_id = saved["profile"]["id"]
     assert saved["profile"]["hasKey"]
     assert "secret-value" not in json.dumps(saved)
@@ -50,26 +64,54 @@ def test_profile_redaction_and_saved_exports(tmp_path):
     meeting = app.store.create({"system": "speaker", "microphone": "mic"})
     run_id = uuid.uuid4().hex
     model = InstalledModel(uuid.uuid4().hex, "test/model", "test", "MIT", "a" * 40, 1, tmp_path)
-    app.transcripts.save_run(meeting, run_id, model, "vi", {"duration": 1}, [
-        {"id": 1, "start": 0, "end": 1, "text": "Xin chào"},
-    ])
-    version = app.minutes.save_version(meeting, run_id, "extractive",
-                                       {"user_text": "# Biên bản tiếng Việt"}, "default")
+    app.transcripts.save_run(
+        meeting,
+        run_id,
+        model,
+        "vi",
+        {"duration": 1},
+        [
+            {"id": 1, "start": 0, "end": 1, "text": "Xin chào"},
+        ],
+    )
+    version = app.minutes.save_version(
+        meeting, run_id, "extractive", {"user_text": "# Biên bản tiếng Việt"}, "default"
+    )
     assert "Xin chào" in call(app, "export.transcriptText", meetingId=meeting, runId=run_id)["text"]
-    assert "Biên bản tiếng Việt" in call(app, "export.minutesMarkdown", meetingId=meeting,
-                                          versionId=version)["markdown"]
+    assert (
+        "Biên bản tiếng Việt"
+        in call(app, "export.minutesMarkdown", meetingId=meeting, versionId=version)["markdown"]
+    )
     destination = tmp_path / "minutes.md"
     destination.write_text("keep", encoding="utf-8")
     with pytest.raises(FileExistsError):
-        call(app, "export.writeMinutes", meetingId=meeting, versionId=version,
-             nativePath=str(destination), overwrite=False)
+        call(
+            app,
+            "export.writeMinutes",
+            meetingId=meeting,
+            versionId=version,
+            nativePath=str(destination),
+            overwrite=False,
+        )
     assert destination.read_text(encoding="utf-8") == "keep"
-    exported = call(app, "export.writeMinutes", meetingId=meeting, versionId=version,
-                    nativePath=str(destination), overwrite=True)
+    exported = call(
+        app,
+        "export.writeMinutes",
+        meetingId=meeting,
+        versionId=version,
+        nativePath=str(destination),
+        overwrite=True,
+    )
     assert exported == {"saved": True, "displayName": "minutes.md"}
     assert "Biên bản tiếng Việt" in destination.read_text(encoding="utf-8")
     with pytest.raises(ValueError):
-        call(app, "export.writeTranscript", meetingId=meeting, runId=run_id,
-             nativePath=str(app.store.root / "bad.txt"), overwrite=True)
+        call(
+            app,
+            "export.writeTranscript",
+            meetingId=meeting,
+            runId=run_id,
+            nativePath=str(app.store.root / "bad.txt"),
+            overwrite=True,
+        )
     assert call(app, "provider.delete", profileId=profile_id)["deleted"]
     assert credentials.get_key(profile_id) is None

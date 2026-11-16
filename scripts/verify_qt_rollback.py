@@ -41,13 +41,21 @@ def verify() -> None:
         store.finalize(meeting)
         run_id = uuid.uuid4().hex
         model = InstalledModel(uuid.uuid4().hex, "test/model", "test", "MIT", "a" * 40, 1, root)
-        TranscriptStore(store).save_run(meeting, run_id, model, "vi", {"duration": 1}, [
-            {"id": 1, "start": 0, "end": 1, "text": "Nội dung tiếng Việt"},
-        ])
+        TranscriptStore(store).save_run(
+            meeting,
+            run_id,
+            model,
+            "vi",
+            {"duration": 1},
+            [
+                {"id": 1, "start": 0, "end": 1, "text": "Nội dung tiếng Việt"},
+            ],
+        )
         OfflineMinutesService(store).generate(meeting)
         env = {**os.environ, "LOCALAPPDATA": directory, "QT_QPA_PLATFORM": "offscreen"}
-        result = subprocess.run([str(legacy_exe), "--smoke"], env=env, capture_output=True,
-                                timeout=90, check=False)
+        result = subprocess.run(
+            [str(legacy_exe), "--smoke"], env=env, capture_output=True, timeout=90, check=False
+        )
         assert result.returncode == 0, f"Legacy app could not open saved data: {result.returncode}"
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
@@ -56,8 +64,10 @@ def verify() -> None:
 
         app = QApplication([])
         page = MeetingsPage(store, ModelManager(root / "fahmm" / "models"))
-        rows = [page.meeting_list.item(index).data(Qt.UserRole)
-                for index in range(page.meeting_list.count())]
+        rows = [
+            page.meeting_list.item(index).data(Qt.UserRole)
+            for index in range(page.meeting_list.count())
+        ]
         assert meeting in rows
         page.meeting_list.setCurrentRow(rows.index(meeting))
         assert page._selected_id() == meeting

@@ -17,25 +17,35 @@ from fahmm.transcripts import TranscriptStore
 def make_cloud_service(tmp_path):
     meetings, meeting_id, old_run = make_meeting_with_run(tmp_path / "meetings")
     transcript = TranscriptStore(meetings)
-    model = InstalledModel(uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40,
-                           100, tmp_path / "model")
+    model = InstalledModel(
+        uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40, 100, tmp_path / "model"
+    )
     run_id = uuid.uuid4().hex
-    transcript.save_run(meeting_id, run_id, model, "vi", {"duration": 4}, [
-        {"id": 2, "start": 0, "end": 2, "text": "Original selected"},
-        {"id": 3, "start": 2, "end": 4, "text": "Unselected secret"},
-    ])
+    transcript.save_run(
+        meeting_id,
+        run_id,
+        model,
+        "vi",
+        {"duration": 4},
+        [
+            {"id": 2, "start": 0, "end": 2, "text": "Original selected"},
+            {"id": 3, "start": 2, "end": 4, "text": "Unselected secret"},
+        ],
+    )
     transcript.save_edits(meeting_id, run_id, {2: "Reviewed corrected text"})
     meetings.set_privacy_mode(meeting_id, "cloud_permitted")
     profiles = ProviderProfiles(tmp_path / "providers.json", FakeCredentials())
-    profile = profiles.save("Provider", "https://example.org/v1", "model-id", 30,
-                            api_key="test-secret-key")
+    profile = profiles.save(
+        "Provider", "https://example.org/v1", "model-id", 30, api_key="test-secret-key"
+    )
     return CloudMinutesService(meetings, profiles), meeting_id, profile.id, old_run, run_id
 
 
 def test_snapshot_is_frozen_and_contains_only_selected_working_text(tmp_path):
     service, meeting_id, profile_id, old_run, run_id = make_cloud_service(tmp_path)
-    snapshot = service.prepare(meeting_id, profile_id, {2}, {2}, prompt="Viết bản nháp",
-                               max_tokens=500)
+    snapshot = service.prepare(
+        meeting_id, profile_id, {2}, {2}, prompt="Viết bản nháp", max_tokens=500
+    )
     preview = snapshot.preview
     serialized = json.dumps(preview, ensure_ascii=False)
     assert preview["destination_hostname"] == "example.org"
@@ -106,10 +116,17 @@ def test_changed_state_blocks_send_before_any_socket_connection(tmp_path, monkey
         service.meetings.set_privacy_mode(meeting_id, "restricted")
     elif change == "profile":
         profile = service.profiles.get(profile_id)
-        service.profiles.save(profile.name, "https://another.example/v1", profile.model_id,
-                              profile.timeout_seconds, profile_id=profile_id)
+        service.profiles.save(
+            profile.name,
+            "https://another.example/v1",
+            profile.model_id,
+            profile.timeout_seconds,
+            profile_id=profile_id,
+        )
     else:
-        TranscriptStore(service.meetings).save_edits(meeting_id, run_id, {2: "Changed after preview"})
+        TranscriptStore(service.meetings).save_edits(
+            meeting_id, run_id, {2: "Changed after preview"}
+        )
     with pytest.raises(PermissionError):
         service.send(snapshot, authorization)
     assert socket_calls == []

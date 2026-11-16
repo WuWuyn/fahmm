@@ -19,8 +19,11 @@ def test_windows_credential_round_trip_without_disk_or_log_leak(tmp_path, caplog
         assert store.get_key(profile_id) is None
         store.set_key(profile_id, secret)
         assert WindowsCredentialStore().get_key(profile_id) == secret
-        disk_text = "".join(path.read_text(encoding="utf-8", errors="ignore")
-                            for path in tmp_path.rglob("*") if path.is_file())
+        disk_text = "".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in tmp_path.rglob("*")
+            if path.is_file()
+        )
         assert secret not in disk_text
         assert secret not in caplog.text
     finally:

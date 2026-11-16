@@ -28,13 +28,17 @@ def test_structured_response_validates_citations_and_unknown_action_fields(tmp_p
     snapshot = service.prepare(meeting_id, profile_id, {2}, {2})
     structured = {
         "summary": [{"text": "Tóm tắt", "source_ids": [2]}],
-        "decisions": [{"text": "Thử nghiệm", "source_ids": [2]},
-                      {"text": "Unsupported claim", "source_ids": [99]}],
-        "actions": [{"task": "Làm bản nháp", "owner": "Alice", "due_date": "tomorrow",
-                     "source_ids": [2]}],
+        "decisions": [
+            {"text": "Thử nghiệm", "source_ids": [2]},
+            {"text": "Unsupported claim", "source_ids": [99]},
+        ],
+        "actions": [
+            {"task": "Làm bản nháp", "owner": "Alice", "due_date": "tomorrow", "source_ids": [2]}
+        ],
     }
-    content = normalize_provider_minutes(json.dumps(structured), snapshot,
-                                         service.meetings.metadata(meeting_id))
+    content = normalize_provider_minutes(
+        json.dumps(structured), snapshot, service.meetings.metadata(meeting_id)
+    )
     assert content["decisions"][0]["sources"][0]["segment_id"] == 2
     assert content["decisions"][0]["sources"][0]["end"] == 2.0
     assert content["decisions"][1]["sources"] == []

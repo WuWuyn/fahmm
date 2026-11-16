@@ -16,9 +16,13 @@ from fahmm.transcripts import TranscriptStore
 ID_RE = re.compile(r"[0-9a-f]{32}\Z")
 DEFAULT_TEMPLATE = {
     "headings": {
-        "title": "Tiêu đề", "date": "Ngày", "attendees": "Người tham dự",
-        "summary": "Tóm tắt", "topics": "Chủ đề và thảo luận",
-        "decisions": "Quyết định", "actions": "Việc cần làm",
+        "title": "Tiêu đề",
+        "date": "Ngày",
+        "attendees": "Người tham dự",
+        "summary": "Tóm tắt",
+        "topics": "Chủ đề và thảo luận",
+        "decisions": "Quyết định",
+        "actions": "Việc cần làm",
         "open_questions": "Câu hỏi và bước tiếp theo",
     },
     "guidance": "Review every excerpt against its source before approving the minutes.",
@@ -134,7 +138,12 @@ class MinutesStore:
                     if source.get("segment_id") not in valid_ids:
                         raise ValueError("Invalid minutes source segment")
                     start, end = source.get("start"), source.get("end")
-                    if not isinstance(start, (float, int)) or not isinstance(end, (float, int)) or start < 0 or end < start:
+                    if (
+                        not isinstance(start, (float, int))
+                        or not isinstance(end, (float, int))
+                        or start < 0
+                        or end < start
+                    ):
                         raise ValueError("Invalid minutes source timestamp")
             for child in value.values():
                 MinutesStore._validate_sources(child, run_id, valid_ids)
@@ -162,7 +171,9 @@ class MinutesStore:
                 result.append(self.read_version(meeting_id, child.name)["manifest"])
             except (OSError, ValueError, KeyError, json.JSONDecodeError):
                 continue
-        return sorted(result, key=lambda item: (item["created_at"], item["version_id"]), reverse=True)
+        return sorted(
+            result, key=lambda item: (item["created_at"], item["version_id"]), reverse=True
+        )
 
     def active_version(self, meeting_id: str) -> dict | None:
         version_id = self.meetings.metadata(meeting_id).get("active_minutes_version")
@@ -176,8 +187,12 @@ class MinutesStore:
         prior = self.read_version(meeting_id, version_id)
         manifest = prior["manifest"]
         return self.save_version(
-            meeting_id, manifest["run_id"], "user_edit", copy.deepcopy(content),
-            manifest["template"], manifest["provider_id"],
+            meeting_id,
+            manifest["run_id"],
+            "user_edit",
+            copy.deepcopy(content),
+            manifest["template"],
+            manifest["provider_id"],
         )
 
     def approve_version(self, meeting_id: str, version_id: str) -> None:

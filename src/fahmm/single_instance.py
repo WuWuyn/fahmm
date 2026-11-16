@@ -35,7 +35,9 @@ class SingleInstanceLock:
             try:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
-                raise AlreadyRunningError("fahmm is already open for this local data folder") from exc
+                raise AlreadyRunningError(
+                    "fahmm is already open for this local data folder"
+                ) from exc
             self._file = handle
         except Exception:
             handle.close()

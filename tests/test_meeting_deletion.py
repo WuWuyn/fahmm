@@ -71,7 +71,9 @@ def test_delete_rejects_invalid_id_and_escaping_link(tmp_path):
             pytest.skip("Creating symlinks is unavailable")
         created = subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if created.returncode:
             pytest.skip("Creating a Windows junction is unavailable")
@@ -94,9 +96,9 @@ def test_reparse_detection_rejects_escape_without_link_privilege(tmp_path, monke
     entry.mkdir()
     other = store.create({})
     original = meeting_deletion._is_reparse
-    monkeypatch.setattr(meeting_deletion, "_is_reparse", lambda path: (
-        path == entry or original(path)
-    ))
+    monkeypatch.setattr(
+        meeting_deletion, "_is_reparse", lambda path: path == entry or original(path)
+    )
     with pytest.raises(ValueError, match="link or reparse"):
         MeetingDeletionService(store).delete(meeting_id)
     assert store._meeting_dir(meeting_id).exists()

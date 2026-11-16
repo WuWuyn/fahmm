@@ -22,7 +22,9 @@ def blocked_worker(audio_path, model_path, language, output, cancel):
 
 def test_spawned_worker_transcribes_local_speech_without_network():
     selected = ModelManager().selected()
-    model_path = os.environ.get("FAHMM_TEST_MODEL_DIR") or (str(selected.path) if selected else None)
+    model_path = os.environ.get("FAHMM_TEST_MODEL_DIR") or (
+        str(selected.path) if selected else None
+    )
     if not model_path:
         pytest.skip("Set FAHMM_TEST_MODEL_DIR to run the real offline ASR smoke test")
     context = multiprocessing.get_context("spawn")
@@ -51,8 +53,11 @@ def test_spawned_worker_transcribes_local_speech_without_network():
         assert process.exitcode == 0
         assert messages[0]["type"] == "started"
         assert messages[-1]["type"] == "completed"
-        assert any("fellow Americans" in item["segment"]["text"] for item in messages
-                   if item["type"] == "segment")
+        assert any(
+            "fellow Americans" in item["segment"]["text"]
+            for item in messages
+            if item["type"] == "segment"
+        )
     finally:
         if process.is_alive():
             process.terminate()

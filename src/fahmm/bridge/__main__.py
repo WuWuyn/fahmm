@@ -38,8 +38,15 @@ def _worker_smoke() -> int:
         if process.is_alive():
             process.terminate()
             process.join(timeout=5)
-        return 0 if (process.exitcode == 0 and result.get("type") == "error"
-                     and "audio is missing" in result.get("message", "")) else 1
+        return (
+            0
+            if (
+                process.exitcode == 0
+                and result.get("type") == "error"
+                and "audio is missing" in result.get("message", "")
+            )
+            else 1
+        )
     except queue.Empty:
         process.terminate()
         process.join(timeout=5)

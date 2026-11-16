@@ -23,8 +23,7 @@ def test_extracts_explicit_claims_with_source_timestamps_and_unknown_fields():
     assert result["summary"] and result["topics"]
     decision = result["decisions"][0]
     assert "thống nhất" in decision["text"]
-    assert decision["sources"] == [{"run_id": "a" * 32, "segment_id": 2,
-                                     "start": 3.0, "end": 7.0}]
+    assert decision["sources"] == [{"run_id": "a" * 32, "segment_id": 2, "start": 3.0, "end": 7.0}]
     action = result["actions"][0]
     assert action["owner"] == action["due_date"] == UNKNOWN
     assert action["sources"][0]["segment_id"] == 3

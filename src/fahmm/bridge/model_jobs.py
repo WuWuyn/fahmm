@@ -47,9 +47,7 @@ class ModelInstallJobs:
         def progress(stage: str, current: int, total: int) -> None:
             with self._lock:
                 fraction = max(0.0, min(1.0, current / total)) if total > 0 else None
-                self._snapshot = InstallSnapshot(
-                    self._snapshot.job_id, "running", stage, fraction
-                )
+                self._snapshot = InstallSnapshot(self._snapshot.job_id, "running", stage, fraction)
 
         try:
             model = self.models.download(repository, progress=progress)
@@ -60,7 +58,10 @@ class ModelInstallJobs:
         except Exception:
             with self._lock:
                 self._snapshot = InstallSnapshot(
-                    self._snapshot.job_id, "error", "Failed", None,
+                    self._snapshot.job_id,
+                    "error",
+                    "Failed",
+                    None,
                     error="Model installation failed",
                 )
 

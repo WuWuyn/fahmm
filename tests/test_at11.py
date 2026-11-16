@@ -25,10 +25,15 @@ _APP_HOLDER = []
 
 def _saved_vietnamese_run(store, meeting_id, model_path):
     run_id = uuid.uuid4().hex
-    model = InstalledModel(uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40,
-                           100, model_path)
+    model = InstalledModel(
+        uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40, 100, model_path
+    )
     TranscriptStore(store).save_run(
-        meeting_id, run_id, model, "vi", {"duration": 3},
+        meeting_id,
+        run_id,
+        model,
+        "vi",
+        {"duration": 3},
         [{"id": 1, "start": 0.0, "end": 2.0, "text": "Đã thống nhất thử nghiệm."}],
     )
     version = MinutesStore(store).save_version(
@@ -39,9 +44,15 @@ def _saved_vietnamese_run(store, meeting_id, model_path):
 
 def _read_outside_app(path):
     return subprocess.check_output(
-        [sys.executable, "-c", "import pathlib,sys; "
-         + "sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())", str(path)],
-        text=True, encoding="utf-8",
+        [
+            sys.executable,
+            "-c",
+            "import pathlib,sys; "
+            + "sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())",
+            str(path),
+        ],
+        text=True,
+        encoding="utf-8",
     )
 
 

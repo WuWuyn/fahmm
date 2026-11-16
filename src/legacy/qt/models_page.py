@@ -34,9 +34,11 @@ class ModelsPage(QWidget):
         self._busy = False
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Local Whisper models"))
-        layout.addWidget(QLabel(
-            "Models download only when you click Download. No meeting audio or transcript is sent."
-        ))
+        layout.addWidget(
+            QLabel(
+                "Models download only when you click Download. No meeting audio or transcript is sent."
+            )
+        )
 
         self.choice_box = QComboBox()
         for choice in CATALOG:
@@ -188,7 +190,10 @@ class ModelsPage(QWidget):
         item = self.installed_list.currentItem()
         if item is None:
             return
-        if QMessageBox.question(self, "Delete model", "Delete this local model installation?") != QMessageBox.Yes:
+        if (
+            QMessageBox.question(self, "Delete model", "Delete this local model installation?")
+            != QMessageBox.Yes
+        ):
             return
         try:
             self.manager.delete(item.data(Qt.UserRole))

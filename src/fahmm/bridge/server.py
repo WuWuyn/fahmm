@@ -48,7 +48,9 @@ class BridgeApplication:
         self.store = MeetingStore(meetings_root)
         self.models = ModelManager(data_root / "models" if data_root is not None else None)
         self.model_jobs = ModelInstallJobs(self.models)
-        self.profiles = ProviderProfiles(data_root / "providers.json" if data_root is not None else None)
+        self.profiles = ProviderProfiles(
+            data_root / "providers.json" if data_root is not None else None
+        )
         self.recorder = SessionController(SoundCardCapture(), self.store)
         self.library = MeetingLibrary(self.store)
         self.deletion = MeetingDeletionService(self.store)
@@ -69,7 +71,9 @@ class BridgeApplication:
         if operation == "session.hello":
             supported = params["versions"]
             if VERSION not in supported:
-                return self._error(request_id, "UNSUPPORTED_VERSION", "Incompatible desktop protocol")
+                return self._error(
+                    request_id, "UNSUPPORTED_VERSION", "Incompatible desktop protocol"
+                )
             self.handshake_complete = True
             result = {"selectedVersion": VERSION, "capabilities": list(CONTRACT["operations"])}
         elif not self.handshake_complete:
@@ -104,10 +108,12 @@ class BridgeApplication:
                 "levels": snapshot.levels,
             }
         elif operation == "recording.incomplete":
-            result = {"meetings": [
-                {"id": item["id"], "name": item["name"], "createdAt": item["created_at"]}
-                for item in self.store.incomplete()
-            ]}
+            result = {
+                "meetings": [
+                    {"id": item["id"], "name": item["name"], "createdAt": item["created_at"]}
+                    for item in self.store.incomplete()
+                ]
+            }
         elif operation == "recording.recover":
             meeting_id = params["meetingId"]
             if meeting_id not in {item["id"] for item in self.store.incomplete()}:
@@ -121,9 +127,11 @@ class BridgeApplication:
         elif operation == "meeting.rename":
             result = {"meeting": asdict(self.library.rename(params["meetingId"], params["name"]))}
         elif operation == "meeting.privacy":
-            result = {"meeting": asdict(self.library.set_privacy_mode(
-                params["meetingId"], params["mode"]
-            ))}
+            result = {
+                "meeting": asdict(
+                    self.library.set_privacy_mode(params["meetingId"], params["mode"])
+                )
+            }
         elif operation == "meeting.import":
             from fahmm.media import import_audio
 
@@ -131,22 +139,27 @@ class BridgeApplication:
             if not source.is_absolute():
                 raise ValueError("Choose an absolute audio file")
             resolved = source.resolve(strict=False)
-            if any(resolved.is_relative_to(root.resolve()) for root in
-                   (self.store.root, self.models.root)):
+            if any(
+                resolved.is_relative_to(root.resolve())
+                for root in (self.store.root, self.models.root)
+            ):
                 raise ValueError("Cannot import a file inside managed application data")
             result = {"meetingId": import_audio(self.store, source)}
         elif operation == "meeting.delete":
             self.deletion.delete(params["meetingId"])
             result = {"deleted": True}
         elif operation == "meeting.cleanupList":
-            result = {"deletions": self.deletion.incomplete_deletions(),
-                      "imports": self.deletion.orphan_imports()}
+            result = {
+                "deletions": self.deletion.incomplete_deletions(),
+                "imports": self.deletion.orphan_imports(),
+            }
         elif operation == "meeting.retryCleanup":
             self.deletion.retry_cleanup(params["meetingId"])
             result = {"cleaned": True}
         elif operation == "meeting.cleanImport":
-            result = {"cleaned": self.deletion.cleanup_orphan_import(
-                params["meetingId"], confirmed=True)}
+            result = {
+                "cleaned": self.deletion.cleanup_orphan_import(params["meetingId"], confirmed=True)
+            }
         elif operation == "transcript.list":
             metadata = self.store.metadata(params["meetingId"])
             result = {
@@ -157,13 +170,16 @@ class BridgeApplication:
             result = {"run": self.transcripts.read_run(params["meetingId"], params["runId"])}
         elif operation == "transcript.saveEdits":
             edits = params["edits"]
-            if len(edits) > 10000 or any(not isinstance(key, str)
-                                         or not re.fullmatch(r"\d+", key)
-                                         or not isinstance(text, str)
-                                         for key, text in edits.items()):
+            if len(edits) > 10000 or any(
+                not isinstance(key, str)
+                or not re.fullmatch(r"\d+", key)
+                or not isinstance(text, str)
+                for key, text in edits.items()
+            ):
                 raise ValueError("Invalid transcript edits")
             self.transcripts.save_edits(
-                params["meetingId"], params["runId"],
+                params["meetingId"],
+                params["runId"],
                 {int(key): text for key, text in edits.items()},
             )
             result = {"saved": True}
@@ -177,18 +193,20 @@ class BridgeApplication:
                 "activeVersionId": metadata.get("active_minutes_version"),
             }
         elif operation == "minutes.read":
-            result = {"version": self.minutes.read_version(
-                params["meetingId"], params["versionId"]
-            )}
+            result = {
+                "version": self.minutes.read_version(params["meetingId"], params["versionId"])
+            }
         elif operation == "minutes.renderBody":
             from fahmm.meeting_export import render_minutes
 
             version = self.minutes.read_version(params["meetingId"], params["versionId"])
             result = {"markdown": render_minutes(version["content"])}
         elif operation == "minutes.edit":
-            result = {"versionId": self.minutes.edit_version(
-                params["meetingId"], params["versionId"], params["content"]
-            )}
+            result = {
+                "versionId": self.minutes.edit_version(
+                    params["meetingId"], params["versionId"], params["content"]
+                )
+            }
         elif operation == "minutes.select":
             self.minutes.select_version(params["meetingId"], params["versionId"])
             result = {"activeVersionId": params["versionId"]}
@@ -228,9 +246,9 @@ class BridgeApplication:
             self.models.delete(params["modelId"])
             result = {"deleted": True}
         elif operation == "asr.start":
-            result = {"runId": self.asr.start(
-                params["meetingId"], params["modelId"], params["language"]
-            )}
+            result = {
+                "runId": self.asr.start(params["meetingId"], params["modelId"], params["language"])
+            }
         elif operation == "asr.cancel":
             self.asr.cancel()
             result = {"state": self.asr.snapshot().state}
@@ -243,19 +261,23 @@ class BridgeApplication:
                 "meetingId": snapshot.meeting_id,
                 "runId": snapshot.run_id,
                 "progress": min(1.0, max(0.0, snapshot.progress))
-                if snapshot.progress is not None else None,
+                if snapshot.progress is not None
+                else None,
                 "segmentCount": snapshot.segment_count,
                 "error": "Transcription failed" if snapshot.error else None,
             }
         elif operation == "minutes.generateOffline":
-            result = {"versionId": self.offline_minutes.generate(
-                params["meetingId"], params["runId"]
-            )}
+            result = {
+                "versionId": self.offline_minutes.generate(params["meetingId"], params["runId"])
+            }
         elif operation == "cloud.preview":
             snapshot = self.cloud_minutes.prepare(
-                params["meetingId"], params["profileId"],
-                set(params["selectedIds"]), set(params["reviewedIds"]),
-                prompt=params["prompt"], max_tokens=params["maxTokens"],
+                params["meetingId"],
+                params["profileId"],
+                set(params["selectedIds"]),
+                set(params["reviewedIds"]),
+                prompt=params["prompt"],
+                max_tokens=params["maxTokens"],
             )
             preview_id = secrets.token_urlsafe(24)
             self._cloud_previews[preview_id] = (snapshot, None, time.monotonic() + 600)
@@ -283,38 +305,52 @@ class BridgeApplication:
             snapshot, authorization, _ = stored
             result = {"versionId": self.cloud_minutes.generate(snapshot, authorization)}
         elif operation == "provider.list":
-            result = {"profiles": [
-                {**asdict(profile), "hasKey": self.profiles.credentials.get_key(profile.id) is not None}
-                for profile in self.profiles.list_profiles()
-            ]}
+            result = {
+                "profiles": [
+                    {
+                        **asdict(profile),
+                        "hasKey": self.profiles.credentials.get_key(profile.id) is not None,
+                    }
+                    for profile in self.profiles.list_profiles()
+                ]
+            }
         elif operation == "provider.save":
             profile = self.profiles.save(
-                params["name"], params["baseUrl"], params["modelId"],
-                params["timeoutSeconds"], profile_id=params["profileId"],
+                params["name"],
+                params["baseUrl"],
+                params["modelId"],
+                params["timeoutSeconds"],
+                profile_id=params["profileId"],
                 api_key=params["apiKey"],
             )
-            result = {"profile": {**asdict(profile), "hasKey":
-                    self.profiles.credentials.get_key(profile.id) is not None}}
+            result = {
+                "profile": {
+                    **asdict(profile),
+                    "hasKey": self.profiles.credentials.get_key(profile.id) is not None,
+                }
+            }
         elif operation == "provider.delete":
             self.profiles.delete(params["profileId"])
             result = {"deleted": True}
         elif operation == "export.minutesMarkdown":
-            result = {"markdown": self.export.minutes_markdown(
-                params["meetingId"], params["versionId"]
-            )}
+            result = {
+                "markdown": self.export.minutes_markdown(params["meetingId"], params["versionId"])
+            }
         elif operation == "export.transcriptText":
-            result = {"text": self.export.transcript_text(
-                params["meetingId"], params["runId"]
-            )}
+            result = {"text": self.export.transcript_text(params["meetingId"], params["runId"])}
         elif operation == "export.writeMinutes":
             target = self.export.export_minutes(
-                params["meetingId"], params["versionId"], Path(params["nativePath"]),
+                params["meetingId"],
+                params["versionId"],
+                Path(params["nativePath"]),
                 overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "export.writeTranscript":
             target = self.export.export_transcript(
-                params["meetingId"], params["runId"], Path(params["nativePath"]),
+                params["meetingId"],
+                params["runId"],
+                Path(params["nativePath"]),
                 overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
@@ -347,16 +383,29 @@ class BridgeApplication:
                 self.store._meeting_dir(stored[0]).resolve()
             ):
                 raise PermissionError("Meeting audio is unavailable")
-            result = {"nativePath": str(path), "contentType": self._audio_type(path),
-                      "size": path.stat().st_size}
+            result = {
+                "nativePath": str(path),
+                "contentType": self._audio_type(path),
+                "size": path.stat().st_size,
+            }
         else:
             return self._error(request_id, "UNSUPPORTED_OPERATION", "Operation is unavailable")
-        return {"v": VERSION, "kind": "response", "id": request_id, "op": operation, "result": result}
+        return {
+            "v": VERSION,
+            "kind": "response",
+            "id": request_id,
+            "op": operation,
+            "result": result,
+        }
 
     @staticmethod
     def _audio_type(path: Path) -> str:
-        return {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
-                ".flac": "audio/flac"}.get(path.suffix.lower(), "application/octet-stream")
+        return {
+            ".wav": "audio/wav",
+            ".mp3": "audio/mpeg",
+            ".m4a": "audio/mp4",
+            ".flac": "audio/flac",
+        }.get(path.suffix.lower(), "application/octet-stream")
 
     def _issue_media_ticket(self, meeting_id: str, path: Path) -> dict[str, str]:
         ticket = secrets.token_urlsafe(32)
@@ -365,8 +414,12 @@ class BridgeApplication:
 
     @staticmethod
     def _error(request_id: str, code: str, message: str) -> dict[str, Any]:
-        return {"v": VERSION, "kind": "error", "id": request_id,
-                "error": {"code": code, "message": message}}
+        return {
+            "v": VERSION,
+            "kind": "error",
+            "id": request_id,
+            "error": {"code": code, "message": message},
+        }
 
 
 def serve() -> int:
@@ -410,7 +463,9 @@ def serve() -> int:
                     response = BridgeApplication._error(request_id, code, "Invalid desktop request")
                 except Exception as exc:
                     sys.stderr.write(f"Bridge operation failed: {type(exc).__name__}\n")
-                    response = BridgeApplication._error(request_id, "OPERATION_FAILED", "Operation failed")
+                    response = BridgeApplication._error(
+                        request_id, "OPERATION_FAILED", "Operation failed"
+                    )
                 wire.write(encode_frame(response))
                 wire.flush()
         finally:

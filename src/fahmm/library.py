@@ -21,7 +21,9 @@ class MeetingSummary:
 
     @property
     def status(self) -> str:
-        return self.recording_state if self.recording_state != "completed" else self.processing_state
+        return (
+            self.recording_state if self.recording_state != "completed" else self.processing_state
+        )
 
 
 class MeetingLibrary:
@@ -63,7 +65,9 @@ class MeetingLibrary:
         if not isinstance(name, str) or Path(name).name != name or name.startswith("."):
             raise ValueError("Invalid meeting audio path")
         path = self.store._meeting_dir(meeting_id) / name
-        if not path.resolve(strict=False).is_relative_to(self.store._meeting_dir(meeting_id).resolve()):
+        if not path.resolve(strict=False).is_relative_to(
+            self.store._meeting_dir(meeting_id).resolve()
+        ):
             raise ValueError("Meeting audio must stay inside its local meeting folder")
         if not path.is_file():
             raise FileNotFoundError("Meeting audio is missing")

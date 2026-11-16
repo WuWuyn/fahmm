@@ -42,8 +42,9 @@ def prepared_job(tmp_path, worker):
     model_id = uuid.uuid4().hex
     model_path = models._path(model_id)
     make_bundle(model_path)
-    models._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40,
-                                    20, model_path))
+    models._register(
+        InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, model_path)
+    )
     return ASRJobController(store, models, worker_target=worker), meeting, model_id, prior
 
 

@@ -25,8 +25,11 @@ _APP_HOLDER = []
 
 
 def test_at03_offline_vietnamese_long_recording(tmp_path, monkeypatch):
-    default = Path(os.environ.get("LOCALAPPDATA", "")) / "fahmm" / "acceptance" / (
-        "vi-vn-fleurs-dev-30m.wav"
+    default = (
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "fahmm"
+        / "acceptance"
+        / ("vi-vn-fleurs-dev-30m.wav")
     )
     sample = Path(os.environ.get("FAHMM_AT03_AUDIO", default))
     if not sample.is_file():
@@ -42,7 +45,10 @@ def test_at03_offline_vietnamese_long_recording(tmp_path, monkeypatch):
         with tempfile.TemporaryDirectory(prefix="fahmm-at03-pytest-") as directory:
             result = subprocess.run(
                 [
-                    sys.executable, "-m", "pytest", "-q",
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
                     f"{Path(__file__).resolve()}::test_at03_offline_vietnamese_long_recording",
                     f"--basetemp={directory}",
                 ],
@@ -53,7 +59,9 @@ def test_at03_offline_vietnamese_long_recording(tmp_path, monkeypatch):
                 check=False,
             )
         assert result.returncode == 0 and "1 passed" in result.stdout, (
-            result.returncode, result.stdout, result.stderr,
+            result.returncode,
+            result.stdout,
+            result.stderr,
         )
         return
 

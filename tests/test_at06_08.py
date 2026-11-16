@@ -15,8 +15,13 @@ def test_restricted_block_confirmed_loopback_and_retry_after_provider_error(tmp_
     try:
         service, meeting_id, profile_id, _, run_id = make_cloud_service(tmp_path)
         profile = service.profiles.get(profile_id)
-        service.profiles.save(profile.name, f"http://127.0.0.1:{server.server_port}/v1",
-                              profile.model_id, 5, profile_id=profile_id)
+        service.profiles.save(
+            profile.name,
+            f"http://127.0.0.1:{server.server_port}/v1",
+            profile.model_id,
+            5,
+            profile_id=profile_id,
+        )
         service.meetings.set_privacy_mode(meeting_id, "restricted")
         blocked_sockets = []
 
@@ -48,7 +53,10 @@ def test_restricted_block_confirmed_loopback_and_retry_after_provider_error(tmp_
         assert handler.requests == []
 
         first = service.generate(snapshot, service.confirm(snapshot, True))
-        assert service.minutes.read_version(meeting_id, first)["manifest"]["review_state"] == "unverified"
+        assert (
+            service.minutes.read_version(meeting_id, first)["manifest"]["review_state"]
+            == "unverified"
+        )
         assert len(handler.requests) == 1
         outgoing = json.loads(handler.requests[0][1])
         assert "Reviewed corrected text" in outgoing["messages"][1]["content"]
@@ -57,16 +65,22 @@ def test_restricted_block_confirmed_loopback_and_retry_after_provider_error(tmp_
         assert all(destination[0] == "127.0.0.1" for destination in socket_destinations)
 
         folder = tmp_path / "meetings" / meeting_id
-        before = {str(path.relative_to(folder)): path.read_bytes()
-                  for path in folder.rglob("*") if path.is_file()}
+        before = {
+            str(path.relative_to(folder)): path.read_bytes()
+            for path in folder.rglob("*")
+            if path.is_file()
+        }
         handler.status = 429
         retry = service.prepare(meeting_id, profile_id, {2}, {2})
         with pytest.raises(ProviderError) as error:
             service.generate(retry, service.confirm(retry, True))
         assert error.value.kind == "quota"
         assert "test-secret-key" not in str(error.value)
-        after = {str(path.relative_to(folder)): path.read_bytes()
-                 for path in folder.rglob("*") if path.is_file()}
+        after = {
+            str(path.relative_to(folder)): path.read_bytes()
+            for path in folder.rglob("*")
+            if path.is_file()
+        }
         assert after == before
         assert service.transcripts.read_run(meeting_id, run_id)["working"]
         assert service.meetings.privacy_mode(meeting_id) == "cloud_permitted"

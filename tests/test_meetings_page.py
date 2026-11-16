@@ -48,13 +48,15 @@ def test_imported_and_recorded_meetings_reopen_and_transcribe(tmp_path, monkeypa
     model_id = uuid.uuid4().hex
     model_path = models._path(model_id)
     make_bundle(model_path)
-    models._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40,
-                                    20, model_path))
+    models._register(
+        InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, model_path)
+    )
     second_id = uuid.uuid4().hex
     second_path = models._path(second_id)
     make_bundle(second_path)
-    models._register(InstalledModel(second_id, "test/whisper-2", "test", "MIT", "b" * 40,
-                                    20, second_path))
+    models._register(
+        InstalledModel(second_id, "test/whisper-2", "test", "MIT", "b" * 40, 20, second_path)
+    )
     jobs = ASRJobController(store, models, worker_target=quick_worker)
     page = MeetingsPage(store, models, jobs)
     page.show()
@@ -62,8 +64,9 @@ def test_imported_and_recorded_meetings_reopen_and_transcribe(tmp_path, monkeypa
     make_audio(source)
     page.import_file(source)
     wait_until(lambda: page.meeting_list.count() == 2 and not page._import_busy)
-    imported = next(item.id for item in page.library.list_meetings()
-                    if item.source_kind == "imported")
+    imported = next(
+        item.id for item in page.library.list_meetings() if item.source_kind == "imported"
+    )
     page.library.rename(imported, "Interview")
     page.refresh(selected_id=imported)
     played = []

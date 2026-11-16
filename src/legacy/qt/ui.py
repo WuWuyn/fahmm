@@ -41,7 +41,9 @@ STATUS_TEXT = {
 
 class RecorderWindow(QMainWindow):
     def __init__(
-        self, controller: SessionController, model_manager: ModelManager | None = None,
+        self,
+        controller: SessionController,
+        model_manager: ModelManager | None = None,
         provider_profiles: ProviderProfiles | None = None,
         cloud_service: CloudMinutesService | None = None,
     ) -> None:
@@ -113,7 +115,9 @@ class RecorderWindow(QMainWindow):
         layout.addStretch()
         self.recorder_page = root
         self.meetings_page = MeetingsPage(
-            self.controller.store, self.model_manager, profiles=self.provider_profiles,
+            self.controller.store,
+            self.model_manager,
+            profiles=self.provider_profiles,
             cloud_service=cloud_service,
         )
         self.models_page = ModelsPage(self.model_manager)
