@@ -8,6 +8,38 @@ import { bridgeCall, exportSaved } from "@/shared/bridge/client";
 vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportSaved: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it("starts at the selected playhead or defaults to the beginning of the selected meeting", async () => {
+  const user = userEvent.setup();
+  const meetingId = "a".repeat(32);
+  const modelId = "m".repeat(32);
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "transcript.list") return { runs: [], activeRunId: null };
+    if (operation === "model.catalog") return { selectedId: modelId };
+    if (operation === "asr.status") return { state: "idle", meetingId: null, runId: null, progress: null, segmentCount: 0, error: null };
+    if (operation === "asr.startFrom") return { runId: "r".repeat(32) };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  render(<TranscriptPanel meetingId={meetingId} onSeek={() => {}} onRunChange={() => {}}
+    playheadSeconds={12.8} audioDurationSeconds={65} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Transcribe" }).hasAttribute("disabled")).toBe(false));
+  await user.click(screen.getByRole("button", { name: "Use playback position" }));
+  expect((screen.getByRole("textbox", { name: "Start transcription at" }) as HTMLInputElement).value).toBe("00:12.8");
+  await user.click(screen.getByRole("button", { name: "Transcribe" }));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "asr.startFrom" && params?.meetingId === meetingId && params?.startSeconds === 12.8)).toBe(true));
+
+  await user.clear(screen.getByRole("textbox", { name: "Start transcription at" }));
+  await user.click(screen.getByRole("button", { name: "Transcribe" }));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.filter(([operation]) => operation === "asr.startFrom")).toHaveLength(2));
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "asr.startFrom" && params?.startSeconds === 0)).toBe(true);
+
+  await user.type(screen.getByRole("textbox", { name: "Start transcription at" }), "01:05");
+  await user.click(screen.getByRole("button", { name: "Transcribe" }));
+  expect(screen.getByText(/Choose a start time before the end/)).toBeTruthy();
+  expect(vi.mocked(bridgeCall).mock.calls.filter(([operation]) => operation === "asr.startFrom")).toHaveLength(2);
+});
+
 it("saves timestamped corrections while retaining original ASR through a remount", async () => {
   const user = userEvent.setup();
   const runId = "r".repeat(32);

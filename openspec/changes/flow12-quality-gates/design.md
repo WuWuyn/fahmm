@@ -66,6 +66,8 @@ Current path for a user action:
 
 Only the cloud-minutes service, after its policy and confirmation checks, may send selected content to a configured provider. UI state is never sufficient authorization. Rust owns import/export user dialogs and grants scoped playback tickets, not general filesystem permissions. Every new operation requires contract entry, shared DTO/fixtures, Python runtime validation, Rust allowlisting, frontend type/UX handling and negative tests.
 
+For selected-meeting ASR, the additive `asr.startFrom` operation carries the meeting ID and absolute start seconds. The Python library resolves only that meeting's managed audio file; the worker decodes the selected range through EOF, returns timestamps in original-recording coordinates and bounds model timestamps to the decoded duration. The run manifest records the start time so retries and later review retain provenance. The old `asr.start` operation remains the 00:00 compatibility path.
+
 Observed design risk: Rust call_backend holds the backend-state Mutex guard during a potentially long sidecar call. Measure whether a synchronous provider operation delays unrelated commands. If reproduced, shorten lock ownership and use a request-multiplexed supervisor or background job, preserving mutation ordering and explicit cancellation. Do not refactor solely on speculation.
 
 Observed maintenance tradeoff: Python bridge/server.py is a large operation dispatcher. Extract domain handlers incrementally (recording, transcription, minutes, library/tasks) only with byte-for-byte contract regression tests.

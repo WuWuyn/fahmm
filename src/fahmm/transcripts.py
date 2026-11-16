@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import uuid
@@ -47,8 +48,22 @@ class TranscriptStore:
         if target.exists():
             raise FileExistsError("This transcription run already exists")
         ids = [segment["id"] for segment in segments]
+        duration = info.get("duration")
+        start_seconds = info.get("start_seconds", 0.0)
+        if (
+            type(duration) not in (int, float)
+            or not math.isfinite(duration)
+            or duration <= 0
+            or type(start_seconds) not in (int, float)
+            or not math.isfinite(start_seconds)
+            or not 0 <= start_seconds < duration
+        ):
+            raise ValueError("Invalid transcription range")
         if len(ids) != len(set(ids)) or any(
-            segment["start"] < 0 or segment["end"] < segment["start"] for segment in segments
+            segment["start"] < start_seconds
+            or segment["end"] < segment["start"]
+            or segment["end"] > duration + 0.02
+            for segment in segments
         ):
             raise ValueError("Invalid transcription segment timestamps or IDs")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +80,7 @@ class TranscriptStore:
                 "selected_language": language,
                 "detected_language": info.get("detected_language"),
                 "duration_seconds": info.get("duration"),
+                "start_seconds": info.get("start_seconds", 0.0),
             }
             _write_json(staging / "manifest.json", manifest)
             _write_json(staging / "original.json", segments)

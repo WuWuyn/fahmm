@@ -26,6 +26,7 @@ Check a task only when the named evidence exists for the **current target commit
 - [ ] 2.4 Edit one transcript segment; reopen and confirm working text persists while original ASR output stays intact. Re-run ASR and confirm an earlier run is still selectable.
 - [ ] 2.5 Click source timestamps in transcript and minutes UI; verify playback seek accuracy and scoped media access on a representative long file and after app restart.
 - [ ] 2.6 Collect permitted Northern/Southern and Vietnamese-English mixed-language samples; report benchmark procedure and error examples. Agree numerical criteria separately before making accuracy claims.
+- [x] 2.7 Implement selected-meeting ASR from a user-selected start time (00:00 default) through EOF; preserve absolute source timestamps and start-time provenance, reject out-of-range positions and verify retry/contract/UI behavior without claiming semantic accuracy from one clip.
 
 ## 3. Re-verify Flow 2 minutes and privacy (G3)
 

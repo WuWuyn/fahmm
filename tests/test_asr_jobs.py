@@ -15,16 +15,16 @@ from fahmm.storage import MeetingStore
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 
-def hanging_worker(audio, model, language, output, cancel):
+def hanging_worker(audio, model, language, output, cancel, start_seconds):
     output.put({"type": "started", "info": {"duration": 100, "language": language}})
     time.sleep(30)
 
 
-def crashed_worker(audio, model, language, output, cancel):
+def crashed_worker(audio, model, language, output, cancel, start_seconds):
     os._exit(7)
 
 
-def quick_worker(audio, model, language, output, cancel):
+def quick_worker(audio, model, language, output, cancel, start_seconds):
     output.put({"type": "started", "info": {"duration": 1, "language": language}})
     output.put({"type": "segment", "segment": {"id": 1, "start": 0, "end": 1, "text": "Hello"}})
     output.put({"type": "completed"})

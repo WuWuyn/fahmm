@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, Download, Save, WandSparkles, X } from "lucide-react";
 import { bridgeCall, exportSaved } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Progress } from "@/components/ui/progress";
@@ -10,8 +11,8 @@ import { formatDateTime, useT } from "@/shared/i18n";
 import { useUIStore } from "@/shared/uiStore";
 
 type Segment = { id: number; start: number; end: number; text: string };
-type Run = { manifest: { run_id: string; created_at: string; model_repository: string }; original: Segment[]; working: Segment[] };
-type RunSummary = { run_id: string; created_at: string; model_repository: string };
+type Run = { manifest: { run_id: string; created_at: string; model_repository: string; start_seconds?: number }; original: Segment[]; working: Segment[] };
+type RunSummary = { run_id: string; created_at: string; model_repository: string; start_seconds?: number };
 type AsrStatus = { state: string; meetingId: string | null; runId: string | null; progress: number | null; segmentCount: number; error: string | null };
 
 function timestamp(seconds: number) {
@@ -19,8 +20,27 @@ function timestamp(seconds: number) {
   return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
+function startTimeLabel(seconds: number): string {
+  const tenths = Math.round(seconds * 10);
+  const whole = Math.floor(tenths / 10);
+  return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}.${tenths % 10}`;
+}
+
+function parseStartTime(value: string): number | null {
+  if (!value.trim()) return 0;
+  const parts = value.trim().split(":");
+  if ((parts.length !== 2 && parts.length !== 3) || parts.slice(0, -1).some((part) => !/^\d+$/.test(part))) return null;
+  if (!/^\d{2}(?:\.\d{1,3})?$/.test(parts[parts.length - 1])) return null;
+  const numbers = parts.map(Number);
+  if (numbers[numbers.length - 1] >= 60) return null;
+  if (parts.length === 3 && (parts[1].length !== 2 || numbers[1] >= 60)) return null;
+  const seconds = parts.length === 3 ? numbers[0] * 3600 + numbers[1] * 60 + numbers[2] : numbers[0] * 60 + numbers[1];
+  return Number.isFinite(seconds) && seconds <= Number.MAX_SAFE_INTEGER ? seconds : null;
+}
+
+export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSeconds = 0, audioDurationSeconds = 0 }: {
   meetingId: string; onSeek: (seconds: number) => void; onRunChange: () => void;
+  playheadSeconds?: number; audioDurationSeconds?: number;
 }) {
   const t = useT();
   const languageUI = useUIStore((state) => state.language);
@@ -30,6 +50,7 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
   const [working, setWorking] = useState<Segment[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [language, setLanguage] = useState("vi");
+  const [startTime, setStartTime] = useState("00:00");
   const [status, setStatus] = useState<AsrStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,7 +68,7 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
       ? current : listing.activeRunId || listing.runs[0]?.run_id || "");
   }, [meetingId]);
 
-  useEffect(() => { setRun(null); setWorking([]); setSelectedRun(""); setMessage("");
+  useEffect(() => { setRun(null); setWorking([]); setSelectedRun(""); setStartTime("00:00"); setMessage("");
     void refreshRuns().catch(() => setMessage("Could not load transcript runs."));
   }, [refreshRuns]);
   useEffect(() => {
@@ -90,10 +111,14 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
 
   async function startOrRetry(retry: boolean) {
     if (!selectedModel && !retry) { setMessage("Install a local model in Models first."); return; }
+    const startSeconds = parseStartTime(startTime);
+    if (!retry && (startSeconds === null || (audioDurationSeconds > 0 && startSeconds >= audioDurationSeconds))) {
+      setMessage("Choose a start time before the end of this recording (MM:SS or HH:MM:SS)."); return;
+    }
     setBusy(true); setMessage("");
     try {
-      await bridgeCall(retry ? "asr.retry" : "asr.start", retry ? {} :
-        { meetingId, modelId: selectedModel, language });
+      await bridgeCall(retry ? "asr.retry" : "asr.startFrom", retry ? {} :
+        { meetingId, modelId: selectedModel, language, startSeconds });
     } catch { setMessage("Could not start transcription. Check the local model and audio."); }
     finally { setBusy(false); }
   }
@@ -129,6 +154,14 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
         {activeJob && <Button variant="secondary" size="sm" onClick={() => void bridgeCall("asr.cancel").catch(() => setMessage("Could not cancel transcription."))}><X size={15} /> {t("Cancel")}</Button>}
         {status?.state === "error" && status.meetingId === meetingId && <Button variant="secondary" size="sm" onClick={() => void startOrRetry(true)}>{t("Retry")}</Button>}
       </div></div>
+    <div className="transcription-start">
+      <Label htmlFor="transcription-start-time">{t("Start transcription at")}</Label>
+      <Input id="transcription-start-time" aria-label={t("Start transcription at")} value={startTime}
+        onChange={(event) => setStartTime(event.target.value)} disabled={activeJob} inputMode="numeric" placeholder="00:00" />
+      <Button variant="secondary" size="sm" disabled={activeJob || audioDurationSeconds <= 0}
+        onClick={() => setStartTime(startTimeLabel(playheadSeconds))}>{t("Use playback position")}</Button>
+      <span className="hint">{t("Transcribes from this time to the end of the selected recording.")}</span>
+    </div>
     {activeJob && <div className="job-progress"><span>{t(status?.state === "loading" ? "Loading model" : status?.state === "cancelling" ? "Cancelling" : "Transcribing")}</span>
       <Progress value={status?.progress == null ? null : Math.round(status.progress * 100)} aria-label={t("Transcription progress")} /> <span>{status?.progress == null ? "" : `${Math.round(status.progress * 100)}%`}</span></div>}
     {status?.state === "error" && status.meetingId === meetingId && <div className="alert" role="alert">{t(status.error || "Transcription failed.")}</div>}
@@ -142,10 +175,12 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange }: {
         void bridgeCall("transcript.select", { meetingId, runId: nextRun }).then(onRunChange)
           .catch(() => { setSelectedRun(previousRun); setMessage("Could not select this transcript run."); });
       }}><option value="" disabled={runs.length > 0}>{t("No transcript yet")}</option>
-        {runs.map((item) => <option key={item.run_id} value={item.run_id}>{formatDateTime(item.created_at, languageUI)} · {item.model_repository}</option>)}
+        {runs.map((item) => <option key={item.run_id} value={item.run_id}>{formatDateTime(item.created_at, languageUI)} · {item.model_repository} · {t("from {time}", { time: startTimeLabel(item.start_seconds ?? 0) })}</option>)}
       </NativeSelect></div>
     {!selectedModel && <p className="hint">{t("A local speech model is required. Install one in Models; no cloud fallback is used.")}</p>}
-    {working.length === 0 && <div className="empty-document">{t("No saved transcript for this meeting.")}</div>}
+    {working.length === 0 && <div className="empty-document">{t(selectedRun && run
+      ? "No speech was detected in this transcription range. Review the selected start time and audio."
+      : "No saved transcript for this meeting.")}</div>}
     <div className="segment-list">{working.map((segment, index) => <div className="segment" key={segment.id}>
       <Button variant="link" size="xs" className="timestamp-button" onClick={() => onSeek(segment.start)} title={t("Seek audio to this segment")}>{timestamp(segment.start)}</Button>
       <div><Textarea aria-label={t("Transcript segment {id}", { id: segment.id })} value={segment.text}

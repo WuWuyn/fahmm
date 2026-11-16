@@ -27,13 +27,20 @@ def run_asr_worker(
     language: str,
     output,
     cancel: MpEvent,
+    start_seconds: float = 0.0,
     backend: ASRBackend | None = None,
 ) -> None:
     """Emit small status/segment messages; never write or upload meeting data."""
     try:
         worker = backend or WhisperASRBackend()
-        segments, info = worker.transcribe(Path(audio_path), Path(model_path), language)
-        if not _send(output, {"type": "started", "info": asdict(info)}, cancel):
+        segments, info = worker.transcribe(
+            Path(audio_path), Path(model_path), language, start_seconds
+        )
+        if not _send(
+            output,
+            {"type": "started", "info": {**asdict(info), "start_seconds": start_seconds}},
+            cancel,
+        ):
             return
         for segment in segments:
             if not _send(output, {"type": "segment", "segment": asdict(segment)}, cancel):

@@ -23,6 +23,8 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   const [selectedId, setSelectedId] = useState("");
   const [tab, setTab] = useState<"transcript" | "minutes">("transcript");
   const [seekTo, setSeekTo] = useState<{ seconds: number; nonce: number } | null>(null);
+  const [playheadSeconds, setPlayheadSeconds] = useState(0);
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
   const [runVersion, setRunVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -50,7 +52,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
     setMessage("");
     try {
       const result = await importAudio();
-      if (result.meetingId) { await refresh(); setSelectedId(result.meetingId); }
+      if (result.meetingId) { await refresh(); setSelectedId(result.meetingId); setPlayheadSeconds(0); setAudioDurationSeconds(0); }
     } catch { setMessage("Could not import audio. Choose a supported WAV, MP3, M4A, or FLAC file."); }
   }
 
@@ -91,7 +93,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
       {backendReady && loading && <p>{t("Loading meetings…")}</p>}
       {backendReady && !loading && meetings.length === 0 && <div className="library-empty"><FolderOpen size={26} /><p>{t("No meetings yet. Record or import audio to begin.")}</p></div>}
       {meetings.map((meeting) => <button key={meeting.id} className={`meeting-row${meeting.id === selectedId ? " selected" : ""}`}
-        onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); }}>
+        onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
         <span className="meeting-icon"><FileAudio size={17} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
           <small>{formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small></span>
         <Badge variant="outline" className={`meeting-privacy-label${meeting.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(meeting.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
@@ -103,7 +105,8 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
         <div className="detail-actions"><Badge variant="outline" className={`privacy-badge${selected.privacy_mode === "cloud_permitted" ? " cloud" : ""}`}>{t(selected.privacy_mode === "cloud_permitted" ? "Cloud Allowed" : "Local Only")}</Badge>
           <Button variant="ghost" size="icon-sm" aria-label={t("Rename {name}", { name: selected.name })} onClick={() => void renameMeeting(selected)}><Pencil size={16} /></Button>
           <Button variant="ghost" size="icon-sm" aria-label={t("Delete {name}", { name: selected.name })} onClick={() => void deleteMeeting(selected)}><Trash2 size={16} /></Button></div></div>
-      {selected.recording_state === "completed" ? <AudioPlayer meetingId={selected.id} seekTo={seekTo} />
+      {selected.recording_state === "completed" ? <AudioPlayer meetingId={selected.id} seekTo={seekTo}
+          onPositionChange={setPlayheadSeconds} onDurationChange={setAudioDurationSeconds} />
         : <div className="panel audio-panel">{t("Recover or finish this recording before playback.")}</div>}
       <Tabs value={tab} onValueChange={(value) => setTab(value as "transcript" | "minutes")}>
         <TabsList variant="line" className="document-tabs" aria-label={t("Meeting documents")}>
@@ -111,6 +114,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
           <TabsTrigger value="minutes">{t("Minutes")}</TabsTrigger>
         </TabsList>
         <TabsContent value="transcript" className="panel document-surface"><TranscriptPanel meetingId={selected.id} onSeek={seek}
+          playheadSeconds={playheadSeconds} audioDurationSeconds={audioDurationSeconds}
           onRunChange={() => setRunVersion((version) => version + 1)} /></TabsContent>
         <TabsContent value="minutes" className="panel document-surface"><MinutesPanel meetingId={selected.id} privacyMode={selected.privacy_mode}
             onPrivacyChange={(mode) => setMeetings((current) => current.map((item) => item.id === selected.id ? { ...item, privacy_mode: mode } : item))}

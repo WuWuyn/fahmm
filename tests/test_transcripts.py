@@ -73,3 +73,22 @@ def test_failed_edit_save_does_not_replace_working_copy(tmp_path, monkeypatch):
         store.save_edits(meeting, run_id, {1: "new"})
     assert json.loads(path.read_text(encoding="utf-8")) == before
     assert store.read_run(meeting, run_id)["original"] == before
+
+
+def test_out_of_recording_timestamp_is_not_saved(tmp_path):
+    meetings = MeetingStore(tmp_path)
+    meeting = meetings.create({"system": "speaker", "microphone": "mic"})
+    model = InstalledModel(
+        uuid.uuid4().hex, "test/whisper", "test", "MIT", "a" * 40, 100, tmp_path / "model"
+    )
+    store = TranscriptStore(meetings)
+    with pytest.raises(ValueError, match="timestamps"):
+        store.save_run(
+            meeting,
+            uuid.uuid4().hex,
+            model,
+            "vi",
+            {"duration": 10.88, "start_seconds": 0.0},
+            [{"id": 1, "start": 0.0, "end": 29.98, "text": "implausible"}],
+        )
+    assert store.list_runs(meeting) == []

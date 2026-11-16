@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import multiprocessing
 import queue
 import threading
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from fahmm.asr import LANGUAGES
 from fahmm.asr_worker import run_asr_worker
 from fahmm.library import MeetingLibrary
+from fahmm.media import probe_audio
 from fahmm.models import InstalledModel, ModelManager
 from fahmm.storage import MeetingStore
 from fahmm.transcripts import TranscriptStore
@@ -47,7 +49,7 @@ class ASRJobController:
         self.worker_target = worker_target
         self._lock = threading.RLock()
         self._snapshot = JobSnapshot("idle", None, None, None, 0, None)
-        self._last_options: tuple[str, str, str] | None = None
+        self._last_options: tuple[str, str, str, float] | None = None
         self._monitor_thread: threading.Thread | None = None
         self._process = None
         self._cancel_event = None
@@ -60,9 +62,17 @@ class ASRJobController:
         with self._lock:
             self._snapshot = JobSnapshot(**{**vars(self._snapshot), **updates})
 
-    def start(self, meeting_id: str, model_id: str, language: str = "vi") -> str:
+    def start(
+        self, meeting_id: str, model_id: str, language: str = "vi", start_seconds: float = 0.0
+    ) -> str:
         if language not in LANGUAGES:
             raise ValueError("Choose Vietnamese, Auto Detect, or English")
+        if (
+            type(start_seconds) not in (int, float)
+            or not math.isfinite(start_seconds)
+            or start_seconds < 0
+        ):
+            raise ValueError("The transcription start time must be non-negative")
         with self._lock:
             if self._snapshot.state in ("loading", "running", "cancelling"):
                 raise RuntimeError("A transcription job is already active")
@@ -72,6 +82,10 @@ class ASRJobController:
             metadata_running = False
             try:
                 audio_path = self.library.audio_path(meeting_id)
+                if start_seconds >= probe_audio(audio_path).seconds:
+                    raise ValueError(
+                        "The transcription start time must be before the end of the recording"
+                    )
                 model = self.models.begin_use(model_id)
                 run_id = uuid.uuid4().hex
                 context = multiprocessing.get_context("spawn")
@@ -79,14 +93,21 @@ class ASRJobController:
                 cancel = context.Event()
                 process = context.Process(
                     target=self.worker_target,
-                    args=(str(audio_path), str(model.path), language, output, cancel),
+                    args=(
+                        str(audio_path),
+                        str(model.path),
+                        language,
+                        output,
+                        cancel,
+                        start_seconds,
+                    ),
                     daemon=True,
                 )
                 self.store.update_metadata(meeting_id, processing_state="running")
                 metadata_running = True
                 process.start()
                 self._snapshot = JobSnapshot("loading", meeting_id, run_id, None, 0, None)
-                self._last_options = (meeting_id, model_id, language)
+                self._last_options = (meeting_id, model_id, language, start_seconds)
                 self._process = process
                 self._cancel_event = cancel
                 self._monitor_thread = threading.Thread(
@@ -148,7 +169,13 @@ class ASRJobController:
                 elif item["type"] == "segment":
                     segments.append(item["segment"])
                     duration = (info or {}).get("duration", 0)
-                    progress = min(0.99, item["segment"]["end"] / duration) if duration else None
+                    origin = (info or {}).get("start_seconds", 0)
+                    remaining = duration - origin
+                    progress = (
+                        min(0.99, max(0.0, (item["segment"]["end"] - origin) / remaining))
+                        if remaining > 0
+                        else None
+                    )
                     self._set(segment_count=len(segments), progress=progress)
                 elif item["type"] == "completed":
                     completed = True
