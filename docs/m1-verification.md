@@ -30,4 +30,4 @@ On 14 November 2026, the user pressed Record and then Stop and save. Technical i
 | AT-02 | Partial | Record/Stop produced a valid WAV in the 9.59-second trial. Still verify Pause/Resume, timer behavior, and excluded paused audio on real hardware. |
 | AT-10 | Not run | After at least one chunk is flushed in a real recording, terminate the app, reopen it, recover the session, and confirm that another meeting remains intact. |
 
-Use only meetings or audio approved for recording. Do not mark M1 accepted until these results are recorded.
+Use only meetings or audio approved for recording. Follow the [current G1 real-device procedure](flow12-g1-test-procedure.md), and record one evidence file per run. Do not mark M1 accepted until these results are recorded.
