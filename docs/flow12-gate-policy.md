@@ -22,3 +22,5 @@ Engineering owner: the author of the affected code change. Engineering reviewer:
 6. The release owner may advertise a minutes-only v1 with action suggestions if G4 is excluded explicitly. The product owner's earlier request for a source-linked Action Item Manager establishes development direction; it does not by itself prove G4 acceptance.
 
 Current engineering evidence is `docs/evidence/flow12-g0-2026-11-15.md`. It records a blocked G0 format check and has no human release sign-off.
+
+The repository's `.github/workflows/quality-gates.yml` runs the Python suite and Ruff lint/format checks, frontend tests/build, Rust host tests, and strict OpenSpec validation on pull requests and pushes to `main`. Pull requests also require FR/PR/AT, G0–G6 and OpenSpec mapping in their body. The Python job publishes skipped tests separately; a skipped real-model or licensed-sample test is not acceptance evidence. CI success is a prerequisite for code integration, not a substitute for G1–G6 manual acceptance or a current G0 evidence record. GitHub branch-protection settings must be verified separately from this file.

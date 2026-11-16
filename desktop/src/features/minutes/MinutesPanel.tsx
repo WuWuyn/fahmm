@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime, useT } from "@/shared/i18n";
 import { useUIStore } from "@/shared/uiStore";
 
-type VersionSummary = { version_id: string; created_at: string; review_state: string; origin: string };
+type VersionSummary = { version_id: string; created_at: string; review_state: string; origin: string;
+  parent_version_id?: string | null; source_origin?: string | null };
 type Version = { manifest: VersionSummary & { run_id: string }; content: Record<string, unknown> };
 type Segment = { id: number; start: number; end: number; text: string };
 type Profile = { id: string; name: string; base_url: string; model_id: string; hasKey: boolean };
@@ -25,6 +26,14 @@ const PROMPTS = {
   structured: "Viết biên bản cuộc họp bằng tiếng Việt. Chỉ dùng các đoạn đã chọn và nêu rõ thông tin chưa xác minh.",
   concise: "Tạo biên bản tiếng Việt ngắn gọn từ các đoạn đã chọn. Liệt kê quyết định, việc cần làm và thông tin chưa xác minh.",
 };
+
+function versionSourceLabel(manifest: VersionSummary): string {
+  if (manifest.origin === "extractive") return "Source-linked extractive draft; not a semantic AI summary";
+  if (manifest.origin === "provider") return "Provider draft; verify claims";
+  if (manifest.source_origin === "extractive") return "Edited from an offline extractive draft; user edits have not been automatically verified.";
+  if (manifest.source_origin === "provider") return "Edited from a provider-generated draft; user edits have not been automatically verified.";
+  return "Edited version; original draft type unavailable. User edits have not been automatically verified.";
+}
 
 export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, onOpenSource, runVersion }: {
   meetingId: string; privacyMode: string; onPrivacyChange: (mode: string) => void;
@@ -236,9 +245,8 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
         {versions.map((item) => <option key={item.version_id} value={item.version_id}>{formatDateTime(item.created_at, language)} · {t(item.origin)} · {t(item.review_state)}</option>)}
       </NativeSelect></div>
     {version && <div className="review-row"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{t(version.manifest.review_state)}</Badge>
-      <span className="hint">{t(version.manifest.origin === "extractive" ? "Source-linked extractive draft; not a semantic AI summary" : version.manifest.origin === "provider" ? "Provider draft; verify claims" : "Edited version")}</span></div>}
-    {version && Array.isArray(version.content.actions) && version.content.actions.length > 0 &&
-      <p className="hint">{t("Action entries in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
+      <span className="hint">{t(versionSourceLabel(version.manifest))}</span></div>}
+    {version && <p className="hint">{t("Any action items in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
     {!version && <div className="empty-document">{t("Create a draft from a saved transcript.")}</div>}
     {version && (editing ? <Textarea className="minutes-editor" aria-label={t("Edit minutes Markdown")} value={editBody} onChange={(event) => setEditBody(event.target.value)} />
       : <article className="markdown-body"><ReactMarkdown>{savedBody}</ReactMarkdown></article>)}

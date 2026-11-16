@@ -1,5 +1,6 @@
 """Saved minutes formatting stays independent of the Qt review widget."""
 
+import copy
 import socket
 import uuid
 
@@ -10,6 +11,7 @@ from fahmm import meeting_export
 from fahmm.meeting_export import MeetingExportService
 from fahmm.minutes_store import MinutesStore
 from fahmm.models import InstalledModel
+from fahmm.offline_minutes import OfflineMinutesService
 from fahmm.transcripts import TranscriptStore
 
 
@@ -59,7 +61,10 @@ def test_export_labels_action_entries_as_suggestions(tmp_path):
         meeting_id, run_id, "extractive", content, "default"
     )
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version)
-    assert "> Action entries are suggestions, not assigned or tracked tasks." in markdown
+    assert (
+        "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
+        in markdown
+    )
     assert "Kiểm tra thử nghiệm" in markdown
 
 
@@ -68,13 +73,63 @@ def test_edited_minutes_keep_labeled_underlying_sources(tmp_path):
     versions = MinutesStore(meetings)
     content = sample_content(run_id)
     content["user_text"] = "# Biên bản đã sửa\nQuyết định cần kiểm tra lại."
-    edited = versions.save_version(meeting_id, run_id, "user_edit", content, "default")
+    first = versions.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id), "default"
+    )
+    edited = versions.edit_version(meeting_id, first, content)
 
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
     assert "# Biên bản đã sửa" in markdown
+    assert (
+        "> Draft type: Edited from an offline extractive draft; user edits have not been automatically verified."
+        in markdown
+    )
     assert "## Source references from the underlying draft" in markdown
     assert "do not automatically verify the edited text" in markdown
     assert "00:00:00.0–00:00:02.0" in markdown
+
+
+def test_offline_draft_edit_and_export_preserve_provenance_and_action_caveat(tmp_path):
+    meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path / "meetings")
+    versions = MinutesStore(meetings)
+    first = OfflineMinutesService(meetings).generate(meeting_id)
+    content = copy.deepcopy(versions.read_version(meeting_id, first)["content"])
+    assert content["actions"] == []
+    content["user_text"] = "# Biên bản đã sửa\n## Việc cần làm\n- Kiểm tra thử nghiệm."
+    edited = versions.edit_version(meeting_id, first, content)
+    destination = tmp_path / "edited-minutes.md"
+    MeetingExportService(meetings).export_minutes(meeting_id, edited, destination)
+    exported = destination.read_text(encoding="utf-8")
+    manifest = versions.read_version(meeting_id, edited)["manifest"]
+    assert manifest["parent_version_id"] == first
+    assert manifest["source_origin"] == "extractive"
+    assert (
+        "> Draft type: Edited from an offline extractive draft; user edits have not been automatically verified."
+        in exported
+    )
+    assert (
+        "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
+        in exported
+    )
+    assert "## Việc cần làm" in exported
+
+
+def test_provider_edited_export_labels_origin_and_action_caveat_without_actions(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
+    versions = MinutesStore(meetings)
+    first = versions.save_version(meeting_id, run_id, "provider", sample_content(run_id), "prompt")
+    content = sample_content(run_id)
+    content["user_text"] = "# Revised minutes without actions"
+    edited = versions.edit_version(meeting_id, first, content)
+    markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
+    assert (
+        "> Draft type: Edited from a provider-generated draft; user edits have not been automatically verified."
+        in markdown
+    )
+    assert (
+        "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
+        in markdown
+    )
 
 
 def test_transcript_export_uses_selected_working_run(tmp_path):

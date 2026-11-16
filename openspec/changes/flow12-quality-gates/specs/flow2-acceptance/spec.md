@@ -39,6 +39,10 @@ Draft creation, edit, regeneration and approval SHALL retain earlier approved ve
 - **WHEN** the user edits a draft and reopens the meeting
 - **THEN** the edit, review state and citations remain available
 
+#### Scenario: Export edited minutes with original draft provenance
+- **WHEN** a user edits an extractive or provider draft and exports the new version
+- **THEN** its manifest keeps the immediate parent version and original draft origin, and the UI and export disclose that user edits were not automatically verified
+
 ### Requirement: Server-enforced Restricted mode
 Cloud provider access SHALL be denied for Restricted meetings by Python policy even if the webview calls the bridge directly. The app SHALL NOT silently downgrade to a provider when offline generation, ASR or networking fails.
 
@@ -78,6 +82,10 @@ The project SHALL clearly label action entries inside minutes as **suggestions**
 #### Scenario: Current minutes-only action entry
 - **WHEN** the minutes document contains a task with unknown owner and no separate task entity
 - **THEN** the UI may show an action suggestion but SHALL NOT imply that it is assigned, tracked or scheduled
+
+#### Scenario: Edited Markdown differs from structured action entries
+- **WHEN** the user adds or removes action text in the minutes Markdown
+- **THEN** the UI and export retain a general warning that any action items are suggestions and not independently tracked tasks
 
 #### Scenario: Future independent task creation
 - **WHEN** an explicitly reviewed action suggestion is promoted to a tracked item in a future G4 implementation

@@ -8,7 +8,7 @@ fahmm has implemented substantial Flow 1 (Record → transcript → playback) an
 
 - Add a traceable **quality-gate policy** requiring each claim of completion to link requirements, code, tests, environment, evidence and named sign-off.
 - Define Flow 1 acceptance scenarios for deliberate dual-source capture, Pause/Resume, crash recovery, offline Vietnamese ASR, edited transcript persistence and timestamp playback.
-- Define Flow 2 acceptance scenarios for source-linked extractive minutes, immutable prior approved versions, privacy-mode enforcement and per-send provider disclosure.
+- Define Flow 2 acceptance scenarios for source-linked extractive minutes, edited-version provenance, a general action-suggestion warning, immutable prior approved versions, privacy-mode enforcement and per-send provider disclosure.
 - Mark independent action-item management as a **new, unimplemented capability**. Define its desired contract, but do not claim current minutes action entries satisfy it.
 - Add architecture guardrails for React ↔ Rust ↔ Python protocol changes, privacy ownership, durable storage/versioning and long-running jobs.
 - Define explicit sequencing: automated subsystem verification, real-device verification and cross-flow end-to-end acceptance are separately scored.
