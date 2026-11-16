@@ -1,6 +1,8 @@
 # v1 release acceptance record
 
-Status: **not accepted for public release**. Updated 15 November 2026. This record separates controlled development checks from real-device and clean-machine acceptance. It contains no meeting audio, transcript, provider payload, or secret.
+Status: **not accepted for public release**. Updated 16 November 2026. This record separates controlled development checks from real-device and clean-machine acceptance. It contains no meeting audio, transcript, provider payload, or secret.
+
+A newer **G1-only portable test candidate** from code commit `1352c90` is documented in the [G1 preflight record](evidence/flow12-g1-preflight-2026-11-16.md). It has not undergone live recording or clean-machine tests. The installer and portable hashes below belong to the older `2211d44` release candidate; they cannot accept the newer code.
 
 ## Candidate identity
 
