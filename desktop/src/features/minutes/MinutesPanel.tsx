@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDateTime, useT } from "@/shared/i18n";
+import { useUIStore } from "@/shared/uiStore";
 
 type VersionSummary = { version_id: string; created_at: string; review_state: string; origin: string };
 type Version = { manifest: VersionSummary & { run_id: string }; content: Record<string, unknown> };
@@ -28,6 +30,8 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   meetingId: string; privacyMode: string; onPrivacyChange: (mode: string) => void;
   onSeek: (seconds: number) => void; onOpenSource?: (runId: string, seconds: number) => void; runVersion: number;
 }) {
+  const t = useT();
+  const language = useUIStore((state) => state.language);
   const [versions, setVersions] = useState<VersionSummary[]>([]);
   const [selectedVersion, setSelectedVersion] = useState("");
   const [version, setVersion] = useState<Version | null>(null);
@@ -45,6 +49,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   const [preview, setPreview] = useState<CloudPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageName, setMessageName] = useState("");
   const dirty = editing && editBody !== savedBody;
 
   const refresh = useCallback(async () => {
@@ -102,7 +107,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
 
   async function changePrivacy() {
     const mode = privacyMode === "restricted" ? "cloud_permitted" : "restricted";
-    if (mode === "cloud_permitted" && !window.confirm("Allow this meeting to be shared with a provider? Each send will still require a payload preview and confirmation.")) return;
+    if (mode === "cloud_permitted" && !window.confirm(t("Allow this meeting to be shared with a provider? Each send will still require a payload preview and confirmation."))) return;
     try {
       await bridgeCall("meeting.privacy", { meetingId, mode });
       onPrivacyChange(mode);
@@ -134,7 +139,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   async function exportMarkdown(copy: boolean) {
     if (!selectedVersion) return;
     if (dirty) {
-      if (!window.confirm("Discard unsaved minutes edits and use the saved version? Cancel to save a new version first.")) return;
+      if (!window.confirm(t("Discard unsaved minutes edits and use the saved version? Cancel to save a new version first."))) return;
       setEditBody(savedBody); setEditing(false);
     }
     try {
@@ -144,7 +149,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
         setMessage("Saved Markdown copied.");
       } else {
         const result = await exportSaved(meetingId, selectedVersion, "minutes");
-        if (result.saved) setMessage(`Exported ${result.displayName}.`);
+        if (result.saved) { setMessageName(result.displayName ?? ""); setMessage("Exported {name}."); }
       }
     } catch { setMessage("Could not export the saved minutes."); }
   }
@@ -200,83 +205,85 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     return [...new Map(found.map((item) => [item.segment_id, item])).values()].sort((a, b) => a.start - b.start);
   })();
 
-  return <section className="document-panel" aria-label="Minutes">
-    <div className="document-toolbar"><div><h2>Meeting minutes</h2><p>Every draft starts unverified.</p></div>
-      <Button size="sm" disabled={busy || segments.length === 0} onClick={() => void generateOffline()}><Sparkles size={15} /> Offline draft</Button></div>
-    <details className="template-settings"><summary>Edit offline template</summary>
+  return <section className="document-panel" aria-label={t("Minutes")}>
+    <div className="document-toolbar"><div><h2>{t("Meeting minutes")}</h2><p>{t("Every draft starts unverified.")}</p></div>
+      <Button size="sm" disabled={busy || segments.length === 0} onClick={() => void generateOffline()}><Sparkles size={15} /> {t("Offline draft")}</Button></div>
+    <details className="template-settings"><summary>{t("Edit offline template")}</summary>
       {template && <div className="template-fields">
-        {Object.entries(template.headings).map(([key, value]) => <Label key={key}>{key.replace(/_/g, " ")}
+        {Object.entries(template.headings).map(([key, value]) => <Label key={key}>{t(key.replace(/_/g, " "))}
           <Input value={value} onChange={(event) => setTemplate((current) => current ?
             { ...current, headings: { ...current.headings, [key]: event.target.value } } : current)} /></Label>)}
-        <Label>Guidance<Textarea value={template.guidance} onChange={(event) => setTemplate((current) => current ?
+        <Label>{t("Guidance")}<Textarea value={template.guidance} onChange={(event) => setTemplate((current) => current ?
           { ...current, guidance: event.target.value } : current)} /></Label>
-        <Label>Topic limit<Input type="number" min={1} max={10} value={template.topic_limit}
+        <Label>{t("Topic limit")}<Input type="number" min={1} max={10} value={template.topic_limit}
           onChange={(event) => setTemplate((current) => current ? { ...current, topic_limit: Number(event.target.value) } : current)} /></Label>
-        <Button variant="secondary" size="sm" onClick={() => void saveTemplate()}>Save template</Button>
+        <Button variant="secondary" size="sm" onClick={() => void saveTemplate()}>{t("Save template")}</Button>
       </div>}
     </details>
-    <div className="privacy-row"><span className="subheading">Privacy classification</span>
-      <Badge variant="outline" className={`privacy-badge${privacyMode === "cloud_permitted" ? " cloud" : ""}`}>{privacyMode === "restricted" ? "Local Only" : "Cloud Allowed"}</Badge>
-      <Button variant="link" size="xs" onClick={() => void changePrivacy()}>Change</Button></div>
-    <div className="document-toolbar secondary"><Label htmlFor="minutes-version">Saved version</Label>
+    <div className="privacy-row"><span className="subheading">{t("Privacy classification")}</span>
+      <Badge variant="outline" className={`privacy-badge${privacyMode === "cloud_permitted" ? " cloud" : ""}`}>{t(privacyMode === "restricted" ? "Local Only" : "Cloud Allowed")}</Badge>
+      <Button variant="link" size="xs" onClick={() => void changePrivacy()}>{t("Change")}</Button></div>
+    <div className="document-toolbar secondary"><Label htmlFor="minutes-version">{t("Saved version")}</Label>
       <NativeSelect id="minutes-version" value={selectedVersion} onChange={(event) => {
-        if (dirty && !window.confirm("Discard unsaved minutes edits?")) return;
+        if (dirty && !window.confirm(t("Discard unsaved minutes edits?"))) return;
         const nextVersion = event.target.value;
         if (!nextVersion) return;
         const previousVersion = selectedVersion;
         setSelectedVersion(nextVersion);
         void bridgeCall("minutes.select", { meetingId, versionId: nextVersion })
           .catch(() => { setSelectedVersion(previousVersion); setMessage("Could not select this minutes version."); });
-      }}><option value="" disabled={versions.length > 0}>No minutes yet</option>
-        {versions.map((item) => <option key={item.version_id} value={item.version_id}>{new Date(item.created_at).toLocaleString()} · {item.origin} · {item.review_state}</option>)}
+      }}><option value="" disabled={versions.length > 0}>{t("No minutes yet")}</option>
+        {versions.map((item) => <option key={item.version_id} value={item.version_id}>{formatDateTime(item.created_at, language)} · {t(item.origin)} · {t(item.review_state)}</option>)}
       </NativeSelect></div>
-    {version && <div className="review-row"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{version.manifest.review_state}</Badge>
-      <span className="hint">{version.manifest.origin === "extractive" ? "Source-linked extractive draft" : version.manifest.origin === "provider" ? "Provider draft; verify claims" : "Edited version"}</span></div>}
-    {!version && <div className="empty-document">Create a draft from a saved transcript.</div>}
-    {version && (editing ? <Textarea className="minutes-editor" aria-label="Edit minutes Markdown" value={editBody} onChange={(event) => setEditBody(event.target.value)} />
+    {version && <div className="review-row"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{t(version.manifest.review_state)}</Badge>
+      <span className="hint">{t(version.manifest.origin === "extractive" ? "Source-linked extractive draft; not a semantic AI summary" : version.manifest.origin === "provider" ? "Provider draft; verify claims" : "Edited version")}</span></div>}
+    {version && Array.isArray(version.content.actions) && version.content.actions.length > 0 &&
+      <p className="hint">{t("Action entries in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
+    {!version && <div className="empty-document">{t("Create a draft from a saved transcript.")}</div>}
+    {version && (editing ? <Textarea className="minutes-editor" aria-label={t("Edit minutes Markdown")} value={editBody} onChange={(event) => setEditBody(event.target.value)} />
       : <article className="markdown-body"><ReactMarkdown>{savedBody}</ReactMarkdown></article>)}
-    {sources.length > 0 && <div className="citation-list"><strong>Source timestamps</strong>
+    {sources.length > 0 && <div className="citation-list"><strong>{t("Source timestamps")}</strong>
       {sources.map((source) => <Button key={source.segment_id} variant="link" size="xs" className="timestamp-button" onClick={() => onSeek(source.start)}>
-        Segment {source.segment_id} · {source.start.toFixed(1)}s</Button>)}</div>}
-    {onOpenSource && sources.length > 0 && <div className="citation-list"><strong>Open transcript source</strong>
+        {t("Segment {id}", { id: source.segment_id })} · {source.start.toFixed(1)}s</Button>)}</div>}
+    {onOpenSource && sources.length > 0 && <div className="citation-list"><strong>{t("Open transcript source")}</strong>
       {sources.map((source) => <Button key={source.segment_id} variant="link" size="xs" className="timestamp-button"
-        onClick={() => onOpenSource(source.run_id, source.start)}>Segment {source.segment_id}</Button>)}</div>}
+        onClick={() => onOpenSource(source.run_id, source.start)}>{t("Segment {id}", { id: source.segment_id })}</Button>)}</div>}
     {version && <div className="document-footer">
-      <Button variant="secondary" size="sm" onClick={() => setEditing((value) => !value)}>{editing ? "Preview" : "Edit"}</Button>
-      <Button size="sm" disabled={!dirty || busy} onClick={() => void saveEdit()}><Save size={15} /> Save new version</Button>
-      <Button variant="secondary" size="sm" disabled={dirty || version.manifest.review_state === "approved"} onClick={() => void approve()}><Check size={15} /> Approve</Button>
-      <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(true)}><Copy size={15} /> Copy Markdown</Button>
-      <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(false)}><Download size={15} /> Export MD</Button>
-      {dirty && <span className="dirty-label">Unsaved edits</span>}</div>}
-    <div className="cloud-section"><div className="cloud-header"><ShieldCheck size={19} /><div><h2>Optional provider draft</h2><p>Only selected, reviewed transcript segments are sent after you confirm the exact payload.</p></div></div>
-      <Label htmlFor="provider-select">Provider profile</Label>
-      <NativeSelect id="provider-select" value={profileId} onChange={(event) => setProfileId(event.target.value)}><option value="">No provider configured</option>
+      <Button variant="secondary" size="sm" onClick={() => setEditing((value) => !value)}>{t(editing ? "Preview" : "Edit")}</Button>
+      <Button size="sm" disabled={!dirty || busy} onClick={() => void saveEdit()}><Save size={15} /> {t("Save new version")}</Button>
+      <Button variant="secondary" size="sm" disabled={dirty || version.manifest.review_state === "approved"} onClick={() => void approve()}><Check size={15} /> {t("Approve")}</Button>
+      <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(true)}><Copy size={15} /> {t("Copy Markdown")}</Button>
+      <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(false)}><Download size={15} /> {t("Export MD")}</Button>
+      {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}</div>}
+    <div className="cloud-section"><div className="cloud-header"><ShieldCheck size={19} /><div><h2>{t("Optional provider draft")}</h2><p>{t("Only selected, reviewed transcript segments are sent after you confirm the exact payload.")}</p></div></div>
+      <Label htmlFor="provider-select">{t("Provider profile")}</Label>
+      <NativeSelect id="provider-select" value={profileId} onChange={(event) => setProfileId(event.target.value)}><option value="">{t("No provider configured")}</option>
         {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model_id}</option>)}
       </NativeSelect>
-      <Label htmlFor="prompt-preset">Prompt template</Label><NativeSelect id="prompt-preset" onChange={(event) => setPrompt(PROMPTS[event.target.value as keyof typeof PROMPTS])}>
-        <option value="structured">Structured Vietnamese minutes</option><option value="concise">Concise Vietnamese minutes</option>
+      <Label htmlFor="prompt-preset">{t("Prompt template")}</Label><NativeSelect id="prompt-preset" onChange={(event) => setPrompt(PROMPTS[event.target.value as keyof typeof PROMPTS])}>
+        <option value="structured">{t("Structured Vietnamese minutes")}</option><option value="concise">{t("Concise Vietnamese minutes")}</option>
       </NativeSelect>
-      <Label htmlFor="minutes-prompt">Prompt</Label><Textarea id="minutes-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-      <Label htmlFor="token-limit">Token limit</Label><Input id="token-limit" type="number" min={100} max={8000}
+      <Label htmlFor="minutes-prompt">{t("Prompt")}</Label><Textarea id="minutes-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+      <Label htmlFor="token-limit">{t("Token limit")}</Label><Input id="token-limit" type="number" min={100} max={8000}
         value={maxTokens} onChange={(event) => setMaxTokens(Number(event.target.value))} />
       <div className="segment-choice-list">{segments.map((segment) => <div className="segment-choice" key={segment.id}>
         <label><input type="checkbox" checked={selectedIds.includes(segment.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, segment.id] : current.filter((id) => id !== segment.id))} />
           <span>{segment.start.toFixed(1)}s · {segment.text}</span></label>
-        <label><input type="checkbox" checked={reviewedIds.includes(segment.id)} onChange={(event) => setReviewedIds((current) => event.target.checked ? [...current, segment.id] : current.filter((id) => id !== segment.id))} /> Reviewed</label>
+        <label><input type="checkbox" checked={reviewedIds.includes(segment.id)} onChange={(event) => setReviewedIds((current) => event.target.checked ? [...current, segment.id] : current.filter((id) => id !== segment.id))} /> {t("Reviewed")}</label>
       </div>)}</div>
       <Button variant="secondary" size="sm" disabled={busy || privacyMode !== "cloud_permitted" || !profileId || selectedIds.length === 0}
-        onClick={() => void createPreview()}>Preview provider payload</Button>
-      {privacyMode !== "cloud_permitted" && <p className="hint">This meeting is Local Only. Change its classification before preparing a provider preview.</p>}
+        onClick={() => void createPreview()}>{t("Preview provider payload")}</Button>
+      {privacyMode !== "cloud_permitted" && <p className="hint">{t("This meeting is Local Only. Change its classification before preparing a provider preview.")}</p>}
     </div>
-    {message && <p className="feedback" role="status">{message}</p>}
+    {message && <p className="feedback" role="status">{t(message, { name: messageName })}</p>}
     <Dialog open={!!preview} onOpenChange={(open) => { if (!open) void cancelPreview(); }}>
-      {preview && <DialogContent className="preview-dialog" aria-label="Provider payload preview">
-        <DialogHeader><DialogTitle>Review provider send</DialogTitle><DialogDescription>{preview.preview.warning}</DialogDescription></DialogHeader>
-        <dl><dt>Destination</dt><dd>{preview.preview.destination_hostname}</dd><dt>Token limit</dt><dd>{preview.preview.token_limit}</dd></dl>
-        <h3>Exact request body</h3><pre>{JSON.stringify(preview.preview.request_body, null, 2)}</pre>
-        <h3>Transcript leaving this device</h3><pre>{preview.preview.transcript}</pre>
-        <DialogFooter><Button variant="secondary" disabled={busy} onClick={() => void cancelPreview()}>Cancel</Button>
-          <Button disabled={busy} onClick={() => void confirmSend()}>Confirm and send</Button></DialogFooter>
+      {preview && <DialogContent className="preview-dialog" aria-label={t("Provider payload preview")}>
+        <DialogHeader><DialogTitle>{t("Review provider send")}</DialogTitle><DialogDescription>{t(preview.preview.warning)}</DialogDescription></DialogHeader>
+        <dl><dt>{t("Destination")}</dt><dd>{preview.preview.destination_hostname}</dd><dt>{t("Token limit")}</dt><dd>{preview.preview.token_limit}</dd></dl>
+        <h3>{t("Exact request body")}</h3><pre>{JSON.stringify(preview.preview.request_body, null, 2)}</pre>
+        <h3>{t("Transcript leaving this device")}</h3><pre>{preview.preview.transcript}</pre>
+        <DialogFooter><Button variant="secondary" disabled={busy} onClick={() => void cancelPreview()}>{t("Cancel")}</Button>
+          <Button disabled={busy} onClick={() => void confirmSend()}>{t("Confirm and send")}</Button></DialogFooter>
       </DialogContent>}
     </Dialog>
   </section>;

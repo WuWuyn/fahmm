@@ -1,0 +1,18 @@
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\D:\fahm\desktop\src-tauri\target\debug\incremental\fahmm_desktop_lib-1ftpuzywqt68o\s-ho6i7yj3cr-0wsfarv-working`
+
+warning: `fahmm-desktop` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+     Running unittests src\lib.rs (target\debug\deps\fahmm_desktop_lib-6f1b03b31bc179da.exe)
+
+running 9 tests
+test host_tests::paths_require_native_dialog_commands ... ok
+test media::tests::bounded_ranges_and_seek ... ok
+test sidecar::tests::reply_reader_rejects_oversized_lines ... ok
+test protocol::tests::shared_contract_fixtures ... ok
+test sidecar::tests::rejects_incompatible_sidecar ... ok
+test sidecar::tests::correlates_concurrent_replies_and_restarts_explicitly ... ok
+test sidecar::tests::unexpected_exit_fails_pending_call ... ok
+test sidecar::tests::timed_out_call_is_not_replayed ... ok
+test sidecar::tests::frozen_sidecar_restarts_after_graceful_shutdown ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.97s

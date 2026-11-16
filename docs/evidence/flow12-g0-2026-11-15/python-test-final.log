@@ -1,0 +1,8 @@
+.....s..ss.........s.................................................... [ 56%]
+.......................................................                  [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_asr.py:27: Set FAHMM_TEST_MODEL_DIR to run the real offline ASR smoke test
+SKIPPED [1] tests\test_at03.py:33: Set FAHMM_AT03_AUDIO to a licensed 30�60-minute Vietnamese file
+SKIPPED [1] tests\test_at05.py:55: AT-05 requires the licensed Vietnamese sample and installed Base model
+SKIPPED [1] tests\test_bridge_media.py:56: Creating symlinks requires a Windows privilege on this machine
+123 passed, 4 skipped in 54.19s

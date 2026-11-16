@@ -1,0 +1,12 @@
+
+> fahmm-desktop@0.1.0 test
+> vitest run --run
+
+
+ RUN  v5.1.0 D:/fahm/desktop
+
+
+ Test Files  7 passed (7)
+      Tests  16 passed (16)
+   Start at  18:00:32
+   Duration  12.75s (environment 50%, import 38%, tests 10%, transform 1%)

@@ -81,6 +81,8 @@ a { color: inherit; }
 .main-content { min-width: 0; padding: 0 clamp(24px, 4vw, 62px) 50px; }
 .topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 .topbar-label { font-size: 12px; color: var(--subtle); }
+.topbar-actions { display: flex; align-items: center; gap: 12px; }
+.language-button { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .privacy-badge { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-strong); color: var(--accent); padding: 5px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .privacy-badge.cloud, .meeting-privacy-label.cloud { border-color: color-mix(in srgb, var(--cloud-text) 45%, transparent); background: var(--cloud-surface); color: var(--cloud-text); }
 .page { max-width: 1140px; padding-top: 44px; }
@@ -261,3 +263,4 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 @media (max-width: 780px) { .recorder-grid, .meetings-layout { grid-template-columns: 1fr; } .meeting-list { max-height: 230px; } }
 @media (max-width: 780px) { .settings-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .app-shell, .app-shell.collapsed { grid-template-columns: 1fr; } .sidebar { flex-direction: row; align-items: center; gap: 14px; border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 15px; } .brand-row { margin: 0; } .brand, .collapse-button, .nav-caption, .nav-link span, .local-note, .theme-button span { display: none; } .sidebar nav { display: flex; gap: 4px; } .nav-link { width: 40px; justify-content: center; padding: 0; } .sidebar-bottom { display: flex; margin-left: auto; margin-top: 0; } .theme-button { width: 40px; justify-content: center; padding: 0; } .main-content { padding: 0 20px 35px; } .page { padding-top: 30px; } .page-heading .privacy-badge { display: none; } }
+@media (max-width: 600px) { .topbar-label { display: none; } .topbar { justify-content: flex-end; } }

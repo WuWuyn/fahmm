@@ -64,6 +64,8 @@ To roll back, close Tauri first, check the SHA-256 file beside `release/fahmm-0.
 
 The earlier Qt portable candidate remains under the ignored `release/` directory for rollback. To build the Tauri sidecar, run `uv run --locked python scripts/build_sidecar.py` from the repository root, then `npm run tauri build` from `desktop/`. The generated sidecar is included as a Tauri external binary. **Do not publicly distribute the candidate while bundled native dependency licenses and clean-machine checks remain open.**
 
+For the current internal Tauri candidate, use the [first-run guide](docs/tauri-first-run.md), [v1 acceptance record](docs/v1-release-acceptance.md), and [native package review](docs/v1-native-license-review.md). The Tauri portable ZIP and MSI/NSIS installers were built from a recorded commit; real-meeting and clean-machine gates are still open.
+
 ## Development and current status
 
 OpenSpec 2.0 is configured for Codex in `.agents/skills/`, with project context in `openspec/config.yaml`:

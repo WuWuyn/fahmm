@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Progress } from "@/components/ui/progress";
+import { formatDateTime, useT } from "@/shared/i18n";
+import { useUIStore } from "@/shared/uiStore";
 
 type Device = { id: string; name: string };
 type Devices = { system: Device[]; microphone: Device[] };
@@ -24,6 +26,8 @@ function timeLabel(seconds: number): string {
 }
 
 export function Recorder({ backendReady }: { backendReady: boolean }) {
+  const t = useT();
+  const language = useUIStore((state) => state.language);
   const [devices, setDevices] = useState<Devices>({ system: [], microphone: [] });
   const [systemId, setSystemId] = useState("");
   const [microphoneId, setMicrophoneId] = useState("");
@@ -67,7 +71,7 @@ export function Recorder({ backendReady }: { backendReady: boolean }) {
     try {
       await bridgeCall(operation, params);
       await refresh();
-    } catch { setError(`Could not ${operation.split(".")[1]} the recording. Check the selected devices and try again.`); }
+    } catch { setError("Could not change the recording. Check the selected devices and try again."); }
     finally { setBusy(false); }
   }
 
@@ -94,59 +98,59 @@ export function Recorder({ backendReady }: { backendReady: boolean }) {
   return (
     <section className="page recorder-page" aria-labelledby="recorder-heading">
       <div className="page-heading">
-        <div><div className="eyebrow">CAPTURE</div><h1 id="recorder-heading">Recorder</h1>
-          <p>Capture system audio and your microphone into one local meeting.</p></div>
-        <Badge variant="outline" className="privacy-badge">Local Only</Badge>
+        <div><div className="eyebrow">{t("CAPTURE")}</div><h1 id="recorder-heading">{t("Recorder")}</h1>
+          <p>{t("Capture system audio and your microphone into one local meeting.")}</p></div>
+        <Badge variant="outline" className="privacy-badge">{t("Local Only")}</Badge>
       </div>
       <div className="recorder-grid">
         <Card className="panel recording-panel">
           <div className="recording-state" role="status" aria-live="polite">
             <span className={`state-dot ${snapshot.state === "recording" ? "pulsing" : ""}`} />
-            {snapshot.state === "recording" ? "Recording" : snapshot.state === "paused" ? "Paused" :
+            {t(snapshot.state === "recording" ? "Recording" : snapshot.state === "paused" ? "Paused" :
               snapshot.state === "finalizing" ? "Finishing" : snapshot.state === "completed" ? "Saved" :
-                snapshot.state === "error" ? "Needs attention" : "Ready to record"}
+                snapshot.state === "error" ? "Needs attention" : "Ready to record")}
           </div>
-          <div className="recording-clock" aria-label={`Elapsed time ${timeLabel(snapshot.seconds)}`}>{timeLabel(snapshot.seconds)}</div>
-          <div className="live-levels" aria-label="Live input levels">
+          <div className="recording-clock" aria-label={t("Elapsed time {time}", { time: timeLabel(snapshot.seconds) })}>{timeLabel(snapshot.seconds)}</div>
+          <div className="live-levels" aria-label={t("Live input levels")}>
             {(["system", "microphone"] as const).map((source) => <div className="live-level" key={source}>
-              <div><span>{source === "system" ? "System audio" : "Microphone"}</span><span>{Math.round(snapshot.levels[source] * 100)}%</span></div>
-              <Progress value={Math.round(snapshot.levels[source] * 100)} aria-label={`${source} input level`} />
+              <div><span>{t(source === "system" ? "System audio" : "Microphone")}</span><span>{Math.round(snapshot.levels[source] * 100)}%</span></div>
+              <Progress value={Math.round(snapshot.levels[source] * 100)} aria-label={t("{source} input level", { source: t(source === "system" ? "System audio" : "Microphone") })} />
             </div>)}
-            {!active && <p className="hint">Input levels appear while recording.</p>}
+            {!active && <p className="hint">{t("Input levels appear while recording.")}</p>}
           </div>
           <div className="control-row">
             {!active && <Button disabled={busy || !backendReady || !systemId || !microphoneId}
               onClick={() => void action("recording.start", { systemId, microphoneId })}>
-              <Circle size={17} fill="currentColor" /> Record
+              <Circle size={17} fill="currentColor" /> {t("Record")}
             </Button>}
-            {snapshot.state === "recording" && <Button variant="secondary" disabled={busy} onClick={() => void action("recording.pause")}><Pause size={17} /> Pause</Button>}
-            {snapshot.state === "paused" && <Button variant="secondary" disabled={busy} onClick={() => void action("recording.resume")}><Play size={17} /> Resume</Button>}
-            {["recording", "paused", "starting"].includes(snapshot.state) && <Button variant="destructive" disabled={busy} onClick={() => void action("recording.stop")}><Square size={16} fill="currentColor" /> Stop</Button>}
+            {snapshot.state === "recording" && <Button variant="secondary" disabled={busy} onClick={() => void action("recording.pause")}><Pause size={17} /> {t("Pause")}</Button>}
+            {snapshot.state === "paused" && <Button variant="secondary" disabled={busy} onClick={() => void action("recording.resume")}><Play size={17} /> {t("Resume")}</Button>}
+            {["recording", "paused", "starting"].includes(snapshot.state) && <Button variant="destructive" disabled={busy} onClick={() => void action("recording.stop")}><Square size={16} fill="currentColor" /> {t("Stop")}</Button>}
           </div>
-          {(error || snapshot.error) && <div className="alert" role="alert">{error || snapshot.error}</div>}
-          {snapshot.skippedChunks > 0 && <p className="hint">{snapshot.skippedChunks} damaged audio chunk(s) were skipped during recovery.</p>}
+          {(error || snapshot.error) && <div className="alert" role="alert">{t(error || snapshot.error || "")}</div>}
+          {snapshot.skippedChunks > 0 && <p className="hint">{t("{count} damaged audio chunk(s) were skipped during recovery.", { count: snapshot.skippedChunks })}</p>}
         </Card>
         <Card className="panel device-panel">
-          <div className="panel-heading"><h2>Audio sources</h2><Button variant="ghost" size="icon-sm" aria-label="Refresh audio devices" onClick={() => void refreshDevices()}><RotateCcw size={17} /></Button></div>
-          <Label htmlFor="system-device">System audio</Label>
+          <div className="panel-heading"><h2>{t("Audio sources")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("Refresh audio devices")} onClick={() => void refreshDevices()}><RotateCcw size={17} /></Button></div>
+          <Label htmlFor="system-device">{t("System audio")}</Label>
           <NativeSelect id="system-device" value={systemId} disabled={active} onChange={(event) => setSystemId(event.target.value)}>
-            {devices.system.length === 0 && <option value="">No system audio device</option>}
+            {devices.system.length === 0 && <option value="">{t("No system audio device")}</option>}
             {devices.system.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
           </NativeSelect>
-          <Label htmlFor="microphone-device">Microphone</Label>
+          <Label htmlFor="microphone-device">{t("Microphone")}</Label>
           <NativeSelect id="microphone-device" value={microphoneId} disabled={active} onChange={(event) => setMicrophoneId(event.target.value)}>
-            {devices.microphone.length === 0 && <option value="">No microphone</option>}
+            {devices.microphone.length === 0 && <option value="">{t("No microphone")}</option>}
             {devices.microphone.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
           </NativeSelect>
-          <p className="hint">Device access begins only after you press Record.</p>
+          <p className="hint">{t("Device access begins only after you press Record.")}</p>
         </Card>
       </div>
       {incomplete.length > 0 && <Card className="panel recovery-panel" aria-labelledby="recovery-heading">
-        <h2 id="recovery-heading">Recover recordings</h2>
-        <p>These sessions have saved audio chunks from an earlier interruption.</p>
+        <h2 id="recovery-heading">{t("Recover recordings")}</h2>
+        <p>{t("These sessions have saved audio chunks from an earlier interruption.")}</p>
         {incomplete.map((meeting) => <div className="recovery-item" key={meeting.id}>
-          <div><strong>{meeting.name}</strong><small>{new Date(meeting.createdAt).toLocaleString()}</small></div>
-          <Button variant="secondary" disabled={busy || active} onClick={() => void action("recording.recover", { meetingId: meeting.id })}>Recover</Button>
+          <div><strong>{meeting.name}</strong><small>{formatDateTime(meeting.createdAt, language)}</small></div>
+          <Button variant="secondary" disabled={busy || active} onClick={() => void action("recording.recover", { meetingId: meeting.id })}>{t("Recover")}</Button>
         </div>)}
       </Card>}
     </section>

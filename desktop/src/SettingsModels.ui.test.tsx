@@ -5,9 +5,22 @@ import userEvent from "@testing-library/user-event";
 import { Models } from "@/features/models/Models";
 import { Settings } from "@/features/settings/Settings";
 import { bridgeCall } from "@/shared/bridge/client";
+import { useUIStore } from "@/shared/uiStore";
 
 vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn() }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); useUIStore.setState({ language: "en" }); });
+
+it("shows Vietnamese settings and switches back to English", async () => {
+  const user = userEvent.setup();
+  vi.mocked(bridgeCall).mockResolvedValue({ profiles: [] });
+  useUIStore.setState({ language: "vi" });
+  render(<Settings backendReady />);
+  expect(screen.getByRole("heading", { name: "Cài đặt" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Lưu cấu hình" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "English" }));
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(localStorage.getItem("fahmm-language")).toBe("en");
+});
 
 it("uses an installed model while offline without starting a download", async () => {
   const user = userEvent.setup();

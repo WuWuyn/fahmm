@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { HashRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { AudioLines, ChevronLeft, ChevronRight, ListMusic, Moon, Settings2, Sun, Boxes, RotateCcw } from "lucide-react";
+import { AudioLines, ChevronLeft, ChevronRight, ListMusic, Moon, Settings2, Sun, Boxes, RotateCcw, Languages } from "lucide-react";
 import { Recorder } from "@/features/recorder/Recorder";
 import { Meetings } from "@/features/meetings/Meetings";
 import { Models } from "@/features/models/Models";
 import { Settings } from "@/features/settings/Settings";
 import { bridgeStatus, restartBridge } from "@/shared/bridge/client";
 import { useUIStore } from "@/shared/uiStore";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -21,8 +22,11 @@ const areas = [
 ] as const;
 
 function App() {
+  const t = useT();
   const theme = useUIStore((state) => state.theme);
   const setTheme = useUIStore((state) => state.setTheme);
+  const language = useUIStore((state) => state.language);
+  const setLanguage = useUIStore((state) => state.setLanguage);
   const collapsed = useUIStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const [backendReady, setBackendReady] = useState(false);
@@ -32,6 +36,7 @@ function App() {
   const reducedMotion = useReducedMotion();
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
   useEffect(() => {
     let current = true;
     let pending = false;
@@ -57,35 +62,42 @@ function App() {
   return <TooltipProvider><HashRouter><div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
     <aside className="sidebar">
       <div className="brand-row"><div className="brand-symbol"><AudioLines size={21} /></div>
-        {!collapsed && <div className="brand">fahmm<span>MEETING WORKSPACE</span></div>}
-        <Button variant="ghost" size="icon-sm" className="collapse-button" onClick={toggleSidebar} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</Button>
+        {!collapsed && <div className="brand">fahmm<span>{t("MEETING WORKSPACE")}</span></div>}
+        <Button variant="ghost" size="icon-sm" className="collapse-button" onClick={toggleSidebar} aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+          title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}>{collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</Button>
       </div>
-      <div className="nav-caption">{collapsed ? "" : "WORKSPACE"}</div>
-      <nav aria-label="Main navigation">
+      <div className="nav-caption">{collapsed ? "" : t("WORKSPACE")}</div>
+      <nav aria-label={t("Main navigation")}>
         {areas.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}
-          aria-label={label} title={collapsed ? label : undefined}
+          aria-label={t(label)} title={collapsed ? t(label) : undefined}
           className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-          <Icon size={19} strokeWidth={1.8} /><span>{label}</span>
+          <Icon size={19} strokeWidth={1.8} /><span>{t(label)}</span>
         </NavLink>)}
       </nav>
       <div className="sidebar-bottom">
-        <div className="local-note"><span className="local-dot" />{!collapsed && <span>Private by default</span>}</div>
+        <div className="local-note"><span className="local-dot" />{!collapsed && <span>{t("Private by default")}</span>}</div>
         <Button variant="outline" className="theme-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          title={theme === "dark" ? "Light mode" : "Dark mode"}>
+          aria-label={t(theme === "dark" ? "Switch to light mode" : "Switch to dark mode")}
+          title={t(theme === "dark" ? "Light mode" : "Dark mode")}>
           {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-          {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
+          {!collapsed && <span>{t(theme === "dark" ? "Light mode" : "Dark mode")}</span>}
         </Button>
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><span className="topbar-label">Desktop workspace</span><Badge variant="outline" className="privacy-badge">Local by default</Badge></header>
+      <header className="topbar"><span className="topbar-label">{t("Desktop workspace")}</span>
+        <div className="topbar-actions"><Badge variant="outline" className="privacy-badge">{t("Local by default")}</Badge>
+          <Button variant="outline" size="sm" className="language-button" type="button"
+            aria-label={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
+            title={t(language === "en" ? "Switch to Vietnamese" : "Switch to English")}
+            onClick={() => setLanguage(language === "en" ? "vi" : "en")}>
+            <Languages size={16} /><span>{language === "en" ? "Tiếng Việt" : "English"}</span>
+          </Button></div></header>
       {!checking && !backendReady && <motion.div className="backend-alert" role="alert"
         initial={reducedMotion ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}>
-        <div><strong>Local backend unavailable</strong><span>Recording and meeting data are temporarily unavailable.</span></div>
-        <Button variant="secondary" disabled={restarting} onClick={() => void restart()}><RotateCcw size={16} />{restarting ? "Restarting…" : "Restart backend"}</Button>
+        <div><strong>{t("Local backend unavailable")}</strong><span>{t("Recording and meeting data are temporarily unavailable.")}</span></div>
+        <Button variant="secondary" disabled={restarting} onClick={() => void restart()}><RotateCcw size={16} />{t(restarting ? "Restarting…" : "Restart backend")}</Button>
       </motion.div>}
       <Routes>
         <Route path="/" element={<Navigate to="/recorder" replace />} />

@@ -5,6 +5,7 @@ import { bridgeCall } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useUIStore } from "@/shared/uiStore";
+import { useT } from "@/shared/i18n";
 
 type Ticket = { ticket: string; contentType: string };
 type Peaks = { seconds: number; peaks: number[] };
@@ -21,6 +22,7 @@ function timeLabel(value: number): string {
 export function AudioPlayer({ meetingId, seekTo }: {
   meetingId: string; seekTo: { seconds: number; nonce: number } | null;
 }) {
+  const t = useT();
   const container = useRef<HTMLDivElement>(null);
   const player = useRef<WaveSurfer | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -29,6 +31,7 @@ export function AudioPlayer({ meetingId, seekTo }: {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const theme = useUIStore((state) => state.theme);
+  const language = useUIStore((state) => state.language);
 
   useEffect(() => {
     if (!container.current) return;
@@ -88,13 +91,13 @@ export function AudioPlayer({ meetingId, seekTo }: {
     }
   }, [seekTo, duration]);
 
-  return <Card className="panel audio-panel" aria-label="Meeting audio player">
-    <div className="audio-heading"><div><h2>Recording</h2><p>Local playback</p></div>
+  return <Card className="panel audio-panel" aria-label={t("Meeting audio player")}>
+    <div className="audio-heading"><div><h2>{language === "vi" ? "Bản ghi âm" : "Recording"}</h2><p>{t("Local playback")}</p></div>
       <span className="audio-time">{timeLabel(position)} / {timeLabel(duration)}</span></div>
-    <div ref={container} className="waveform" aria-label="Audio waveform; click to seek" />
+    <div ref={container} className="waveform" aria-label={t("Audio waveform; click to seek")} />
     <div className="audio-controls"><Button variant="secondary" size="sm" disabled={loading || !!error} onClick={() => void player.current?.playPause()}>
-      {playing ? <Pause size={16} /> : <Play size={16} />} {playing ? "Pause" : "Play"}
-    </Button><span className="hint">{loading ? "Loading waveform…" : "Select a timestamp or click the waveform to seek."}</span></div>
-    {error && <div className="alert" role="alert">{error}</div>}
+      {playing ? <Pause size={16} /> : <Play size={16} />} {t(playing ? "Pause" : "Play")}
+    </Button><span className="hint">{t(loading ? "Loading waveform…" : "Select a timestamp or click the waveform to seek.")}</span></div>
+    {error && <div className="alert" role="alert">{t(error)}</div>}
   </Card>;
 }
