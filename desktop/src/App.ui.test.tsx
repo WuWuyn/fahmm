@@ -82,6 +82,32 @@ describe("desktop app shell", () => {
     ]));
   });
 
+  it("records with the Windows default microphone listed first", async () => {
+    const user = userEvent.setup();
+    vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+      switch (operation) {
+        case "recording.devices": return {
+          system: [{ id: "default-output", name: "Headphones" }],
+          microphone: [
+            { id: "default-mic", name: "Microphone Array" },
+            { id: "virtual-mic", name: "Virtual Microphone" },
+          ],
+        };
+        case "recording.incomplete": return { meetings: [] };
+        case "recording.snapshot": return { state: "idle", seconds: 0, meetingId: null, error: null, skippedChunks: 0 };
+        case "recording.start": return { meetingId: "a".repeat(32) };
+        default: throw new Error(`Unexpected operation ${operation}`);
+      }
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Record" }).hasAttribute("disabled")).toBe(false));
+    expect((screen.getByLabelText("Microphone") as HTMLSelectElement).value).toBe("default-mic");
+    await user.click(screen.getByRole("button", { name: "Record" }));
+    expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+      operation === "recording.start" && params?.microphoneId === "default-mic" && params?.systemId === "default-output"
+    )).toBe(true);
+  });
+
   it("offers recovery for an interrupted local recording", async () => {
     const user = userEvent.setup();
     vi.mocked(bridgeCall).mockImplementation(async (operation) => {
