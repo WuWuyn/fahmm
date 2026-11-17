@@ -197,10 +197,15 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .citation-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .citation-list strong { font-size: 11px; margin-right: 5px; }
 .domain-review { margin: 18px 0; }
-.domain-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
-.domain-metadata label, .domain-claim label { display: grid; gap: 6px; font-size: 12px; }
-.domain-metadata small, .domain-claim small { color: var(--muted); }
-.domain-section { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 12px; }
+.domain-review > .hint { font-size: 13px; line-height: 1.6; letter-spacing: .005em; }
+.domain-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 22px 24px; margin: 24px 0 28px; }
+.domain-metadata > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.domain-metadata label { display: block; font-size: 13px; font-weight: 650; line-height: 1.45; letter-spacing: .01em; }
+.domain-metadata input { width: 100%; min-height: 44px; padding-inline: 13px; font-size: 14px; line-height: 1.5; letter-spacing: .005em; }
+.domain-metadata small { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; letter-spacing: .005em; }
+.domain-claim label { display: grid; gap: 6px; font-size: 12px; }
+.domain-claim small { color: var(--muted); }
+.domain-section { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 18px; }
 .domain-section .document-toolbar.secondary { justify-content: space-between; margin: 12px 0; }
 .domain-section h3 { font-size: 14px; font-weight: 700; }
 .domain-claim { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; }
