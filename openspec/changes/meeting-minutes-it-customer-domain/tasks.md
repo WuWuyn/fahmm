@@ -26,7 +26,7 @@
 
 - [x] 4.1 (ITM-02–ITM-08, ITM-10) Render the new domain payload and Markdown export from the same saved version with section/certainty/review labels, item citations, and the action-suggestion caveat; verify preview/export equivalence, `Chưa rõ` fields, and a freeform edited version's separate underlying-reference notice.
 - [x] 4.2 (ITM-10, ITM-11) Verify legacy generic minutes still render/export unchanged, new versions do not rewrite prior approved files or ASR artifacts, and write failure leaves the last committed version readable; record fixture hashes before/after.
-- [ ] 4.3 (ITM-01–ITM-11) Run a controlled end-to-end set for all five meeting types using licensed/consented Vietnamese and mixed-language transcript fixtures: review sources, correct one claim, approve, reopen, export, and confirm no unsupported decision, formal requirement, confirmed root cause, UAT acceptance, or tracked task appears. Record environment, commit, results, and reviewer; keep customer content out of Git.
+- [x] 4.3 (ITM-01–ITM-11) Run a controlled end-to-end set for all five meeting types using licensed/consented Vietnamese and mixed-language transcript fixtures: review sources, correct one claim, approve, reopen, export, and confirm no unsupported decision, formal requirement, confirmed root cause, UAT acceptance, or tracked task appears. Record environment, commit, results, and reviewer; keep customer content out of Git.
 
 ## Workflow follow-up
 
