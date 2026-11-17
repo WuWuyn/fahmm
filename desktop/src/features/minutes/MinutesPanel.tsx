@@ -66,6 +66,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   const [messageName, setMessageName] = useState("");
   const freeformDirty = editing && editBody !== savedBody;
   const dirty = freeformDirty || domainDirty;
+  const savedMeetingType = (version?.content as DomainContent | undefined)?.domain?.meeting_type;
 
   const refresh = useCallback(async () => {
     const [listing, providerList, runs, templateData] = await Promise.all([
@@ -254,30 +255,39 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     return [...new Map(found.map((item) => [item.segment_id, item])).values()].sort((a, b) => a.start - b.start);
   })();
 
-  return <section className="document-panel" aria-label={t("Minutes")}>
-    <div className="document-toolbar"><div><h2>{t("Meeting minutes")}</h2><p>{t("Every draft starts unverified.")}</p></div>
-      <Button size="sm" disabled={busy || segments.length === 0} onClick={() => void generateOffline()}><Sparkles size={15} /> {t("Offline draft")}</Button></div>
-    <Label htmlFor="minutes-meeting-type">{t("Meeting type")}
-      <NativeSelect id="minutes-meeting-type" value={meetingType} disabled={busy}
-        onChange={(event) => void chooseMeetingType(event.target.value)}>
-        {MEETING_TYPES.map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}
-      </NativeSelect></Label>
-    <details className="template-settings"><summary>{t("Edit offline template")}</summary>
-      {template && <div className="template-fields">
-        {Object.entries(template.headings).map(([key, value]) => <Label key={key}>{t(key.replace(/_/g, " "))}
-          <Input value={value} onChange={(event) => setTemplate((current) => current ?
-            { ...current, headings: { ...current.headings, [key]: event.target.value } } : current)} /></Label>)}
-        <Label>{t("Guidance")}<Textarea value={template.guidance} onChange={(event) => setTemplate((current) => current ?
-          { ...current, guidance: event.target.value } : current)} /></Label>
-        <Label>{t("Topic limit")}<Input type="number" min={1} max={10} value={template.topic_limit}
-          onChange={(event) => setTemplate((current) => current ? { ...current, topic_limit: Number(event.target.value) } : current)} /></Label>
-        <Button variant="secondary" size="sm" onClick={() => void saveTemplate()}>{t("Save template")}</Button>
+  return <section className="document-panel minutes-panel" aria-label={t("Minutes")}>
+    <header className="minutes-heading"><h2>{t("Meeting minutes")}</h2>
+      <p>{t("Create a draft from the saved transcript, then review its sources before approval.")}</p></header>
+    <section className="minutes-create" aria-labelledby="minutes-create-heading">
+      <div className="minutes-create-main"><div className="minutes-create-copy">
+        <h3 id="minutes-create-heading">{t("Create a new draft")}</h3>
+        <p>{t("Offline and source-linked. Each new draft starts unverified.")}</p></div>
+        <div className="minutes-create-controls"><div className="minutes-type-field">
+          <Label htmlFor="minutes-meeting-type">{t("Meeting type")}</Label>
+          <NativeSelect id="minutes-meeting-type" value={meetingType} disabled={busy}
+            onChange={(event) => setMeetingType(event.target.value)}>
+            {MEETING_TYPES.map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}
+          </NativeSelect></div>
+          <Button size="sm" disabled={busy || segments.length === 0} onClick={() => void generateOffline()}><Sparkles size={15} /> {t("Create offline draft")}</Button>
+        </div></div>
+      {savedMeetingType && meetingType !== savedMeetingType && <div className="minutes-type-update">
+        <p>{t("This type will be used for the next draft.")}</p>
+        <Button variant="link" size="xs" disabled={busy} onClick={() => void chooseMeetingType(meetingType)}>{t("Apply type to saved version")}</Button>
       </div>}
-    </details>
-    <div className="privacy-row"><span className="subheading">{t("Privacy classification")}</span>
-      <Badge variant="outline" className={`privacy-badge${privacyMode === "cloud_permitted" ? " cloud" : ""}`}>{t(privacyMode === "restricted" ? "Local Only" : "Cloud Allowed")}</Badge>
-      <Button variant="link" size="xs" onClick={() => void changePrivacy()}>{t("Change")}</Button></div>
-    <div className="document-toolbar secondary"><Label htmlFor="minutes-version">{t("Saved version")}</Label>
+      <details className="template-settings"><summary>{t("Edit offline template")}</summary>
+        {template && <div className="template-fields">
+          {Object.entries(template.headings).map(([key, value]) => <Label key={key}>{t(key.replace(/_/g, " "))}
+            <Input value={value} onChange={(event) => setTemplate((current) => current ?
+              { ...current, headings: { ...current.headings, [key]: event.target.value } } : current)} /></Label>)}
+          <Label>{t("Guidance")}<Textarea value={template.guidance} onChange={(event) => setTemplate((current) => current ?
+            { ...current, guidance: event.target.value } : current)} /></Label>
+          <Label>{t("Topic limit")}<Input type="number" min={1} max={10} value={template.topic_limit}
+            onChange={(event) => setTemplate((current) => current ? { ...current, topic_limit: Number(event.target.value) } : current)} /></Label>
+          <Button variant="secondary" size="sm" onClick={() => void saveTemplate()}>{t("Save template")}</Button>
+        </div>}
+      </details>
+    </section>
+    <div className="minutes-version-group"><div className="minutes-version-control"><Label htmlFor="minutes-version">{t("Saved version")}</Label>
       <NativeSelect id="minutes-version" value={selectedVersion} onChange={(event) => {
         if (dirty && !window.confirm(t("Discard unsaved minutes edits?"))) return;
         const nextVersion = event.target.value;
@@ -289,9 +299,10 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       }}><option value="" disabled={versions.length > 0}>{t("No minutes yet")}</option>
         {versions.map((item) => <option key={item.version_id} value={item.version_id}>{formatDateTime(item.created_at, language)} · {t(item.origin)} · {t(item.review_state)}</option>)}
       </NativeSelect></div>
-    {version && <div className="review-row"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{t(version.manifest.review_state)}</Badge>
-      <span className="hint">{t(versionSourceLabel(version.manifest))}</span></div>}
-    {version && <p className="hint">{t("Any action items in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
+      {version && <div className="minutes-version-meta"><Badge variant="outline" className={`review-badge ${version.manifest.review_state}`}>{t(version.manifest.review_state === "approved" ? "Approved" : "Unverified")}</Badge>
+        <span>{t(versionSourceLabel(version.manifest))}</span></div>}
+    </div>
+    {version && <p className="minutes-action-note">{t("Any action items in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
     {!version && <div className="empty-document">{t("Create a draft from a saved transcript.")}</div>}
     {version && (version.content as unknown as DomainContent).domain && <DomainMinutesReview
       key={selectedVersion} content={version.content as unknown as DomainContent} drift={sourceDrift} busy={busy}
@@ -315,6 +326,9 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(false)}><Download size={15} /> {t("Export MD")}</Button>
       {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}</div>}
     <div className="cloud-section"><div className="cloud-header"><ShieldCheck size={19} /><div><h2>{t("Optional provider draft")}</h2><p>{t("Only selected, reviewed transcript segments are sent after you confirm the exact payload.")}</p></div></div>
+      <div className="cloud-privacy"><span className="subheading">{t("Privacy classification")}</span>
+        <Badge variant="outline" className={`privacy-badge${privacyMode === "cloud_permitted" ? " cloud" : ""}`}>{t(privacyMode === "restricted" ? "Local Only" : "Cloud Allowed")}</Badge>
+        <Button variant="link" size="xs" onClick={() => void changePrivacy()}>{t("Change privacy")}</Button></div>
       <Label htmlFor="provider-select">{t("Provider profile")}</Label>
       <NativeSelect id="provider-select" value={profileId} onChange={(event) => setProfileId(event.target.value)}><option value="">{t("No provider configured")}</option>
         {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model_id}</option>)}

@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
 import { bridgeCall, exportSaved } from "@/shared/bridge/client";
+import { useUIStore } from "@/shared/uiStore";
 
 vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportSaved: vi.fn() }));
 
@@ -39,6 +40,7 @@ beforeEach(() => {
       case "transcript.list": return { activeRunId: "r".repeat(32) };
       case "transcript.read": return { run: { working: [{ id: 1, start: 0, end: 1, text: "Xin chào" }] } };
       case "minutes.generateOffline": versionId = "m".repeat(32); return { versionId };
+      case "minutes.setType": versionId = "t".repeat(32); return { versionId };
       case "cloud.preview": previewCount += 1; return { previewId: `preview-${previewCount}`, preview: {
         destination_hostname: "example.org", warning: "Content leaves this device", transcript: "Xin chào",
         prompt: "Viết biên bản", token_limit: 2000, request_body: { model: "model", messages: [{ content: "Xin chào" }] },
@@ -50,7 +52,7 @@ beforeEach(() => {
     }
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); useUIStore.setState({ language: "en" }); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 it("shows draft provenance and action caveat for edited Markdown without structured actions", async () => {
   versionId = "m".repeat(32);
@@ -64,11 +66,34 @@ it("shows draft provenance and action caveat for edited Markdown without structu
 it("keeps Restricted meetings offline and labels drafts unverified", async () => {
   const user = userEvent.setup();
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
-  await screen.findByRole("button", { name: "Offline draft" });
-  await user.click(screen.getByRole("button", { name: "Offline draft" }));
-  await waitFor(() => expect(screen.getByText("unverified")).toBeTruthy());
+  await screen.findByRole("button", { name: "Create offline draft" });
+  expect(screen.getByLabelText("Meeting type").closest(".minutes-create")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Create offline draft" }));
+  await waitFor(() => expect(screen.getByText("Unverified")).toBeTruthy());
   expect(screen.getByRole("button", { name: "Preview provider payload" }).hasAttribute("disabled")).toBe(true);
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "cloud.preview")).toBe(false);
+});
+
+it("shows the new draft controls and review state in Vietnamese", async () => {
+  versionId = "m".repeat(32);
+  useUIStore.setState({ language: "vi" });
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  expect(await screen.findByRole("heading", { name: "Tạo bản nháp mới" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Tạo bản nháp ngoại tuyến" })).toBeTruthy();
+  await waitFor(() => expect(document.querySelector(".review-badge")?.textContent).toBe("Chưa xác minh"));
+});
+
+it("uses the selected type for the next draft until the user applies it to a saved version", async () => {
+  domainMode = true; versionId = "m".repeat(32);
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByText("Review API");
+  await user.selectOptions(screen.getByLabelText("Meeting type"), "requirement_gathering");
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.setType")).toBe(false);
+  expect(screen.getByText("This type will be used for the next draft.")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Apply type to saved version" }));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "minutes.setType" && params?.meetingType === "requirement_gathering")).toBe(true));
 });
 
 it("cancels a preview and requires a fresh confirmation for the next send", async () => {
