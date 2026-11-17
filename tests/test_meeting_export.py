@@ -242,6 +242,7 @@ def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp
     preview = render_minutes(saved)
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version_id)
     assert preview in markdown
+    assert "Loại cuộc họp: Cập nhật dự án" in preview
     assert "Ngày giờ họp: Chưa rõ" in preview
     assert "Người phụ trách: Chưa rõ" in preview
     assert "00:00:00.0–00:00:02.0" in preview

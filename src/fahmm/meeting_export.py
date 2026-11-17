@@ -77,6 +77,14 @@ DOMAIN_HEADINGS = {
     "incident_findings": "Ghi nhận sự cố",
     "uat_observations": "Ghi nhận UAT",
 }
+DOMAIN_MEETING_TYPE_LABELS = {
+    "general": "Cuộc họp chung",
+    "requirement_gathering": "Thu thập yêu cầu",
+    "technical_discussion": "Thảo luận kỹ thuật",
+    "project_status": "Cập nhật dự án",
+    "issue_incident": "Vấn đề / sự cố",
+    "uat_feedback": "Phản hồi UAT",
+}
 DOMAIN_REVIEW_LABELS = {
     "needs_review": "Cần xem lại",
     "confirmed": "Đã xác nhận",
@@ -104,7 +112,7 @@ def _render_domain_minutes(content: dict) -> str:
     participants = ", ".join(value("participants")) or "Chưa rõ"
     lines = [
         f"# {value('title') or 'Chưa rõ'}",
-        f"Loại cuộc họp: {domain['meeting_type']}",
+        f"Loại cuộc họp: {DOMAIN_MEETING_TYPE_LABELS[domain['meeting_type']]}",
         f"Ngày giờ họp: {value('meeting_datetime') or 'Chưa rõ'}",
         f"Dự án/khách hàng: {value('project_customer') or 'Chưa rõ'}",
         f"Người tham dự: {participants}",
