@@ -30,6 +30,8 @@ def _record(value: Any) -> bool:
 def _fields_match(value: Any, fields: dict[str, str]) -> bool:
     if not _record(value):
         return False
+    if set(value) - set(fields):
+        return False
     for name, kind in fields.items():
         item = value.get(name)
         match kind:

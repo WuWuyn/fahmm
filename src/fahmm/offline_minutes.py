@@ -7,11 +7,13 @@ import json
 import re
 from collections import Counter
 
+from fahmm.minutes_domain import new_claim, new_domain_content
 from fahmm.minutes_store import MinutesStore
 from fahmm.storage import MeetingStore
 from fahmm.transcripts import TranscriptStore
 
 UNKNOWN = "Chưa rõ"
+DOMAIN_SECTION_LIMIT = 100
 DECISION_WORDS = ("thống nhất", "quyết định", "đồng ý", "chốt", "nhất trí")
 ACTION_WORDS = ("cần thực hiện", "cần làm", "giao cho", "phụ trách", "sẽ làm", "sẽ gửi")
 QUESTION_WORDS = ("?", "chưa rõ", "cần làm rõ", "cần xác nhận")
@@ -122,6 +124,121 @@ def extract_minutes(meeting: dict, run_id: str, segments: list[dict], topic_limi
     }
 
 
+def extract_domain_minutes(
+    meeting: dict, run_id: str, segments: list[dict], meeting_type: str, topic_limit: int = 5
+) -> dict:
+    """Build cited candidates only; keyword matches are never verified facts."""
+    usable = [
+        segment
+        for segment in segments
+        if isinstance(segment.get("text"), str) and segment["text"].strip()
+    ]
+    if not usable:
+        raise ValueError("A non-empty transcript is required for minutes")
+    usable.sort(key=lambda segment: (segment["start"], segment["id"]))
+    content = new_domain_content(meeting_type, title=meeting.get("name"))
+    sections = content["domain"]["sections"]
+
+    def append(section: str, item: dict) -> None:
+        entries = sections.setdefault(section, [])
+        if len(entries) < DOMAIN_SECTION_LIMIT:
+            entries.append(item)
+
+    def cite(segment: dict, **fields: object) -> dict:
+        source = {**_reference(run_id, segment), "excerpt": segment["text"]}
+        return new_claim(segment["text"].strip(), "extractive", sources=[source], **fields)
+
+    topics = _topic_segments(usable, topic_limit)
+    sections["summary"] = [cite(segment) for segment in topics[:3]]
+    sections["topics"] = [cite(segment) for segment in topics]
+    for segment in usable:
+        lower = segment["text"].casefold()
+        if any(word in lower for word in QUESTION_WORDS):
+            append("open_questions", cite(segment))
+        if any(word in lower for word in ACTION_WORDS):
+            append(
+                "actions",
+                cite(segment, owner=UNKNOWN, due_date=UNKNOWN, confirmation_status="suggested"),
+            )
+        if any(word in lower for word in DECISION_WORDS) and not any(
+            word in lower
+            for word in (
+                "chưa thống nhất",
+                "không thống nhất",
+                "chưa quyết định",
+                "chưa chốt",
+                "không đồng ý",
+                "proposed",
+                "đề xuất",
+                "phương án",
+            )
+        ):
+            append("decisions", cite(segment))
+        elif any(word in lower for word in ("đề xuất", "phương án", "alternative", "proposal")):
+            append("proposed_solutions", cite(segment))
+
+        if meeting_type == "requirement_gathering" and any(
+            word in lower for word in ("yêu cầu", "hệ thống phải", "cần có", "requirement")
+        ):
+            kind = "business_rule" if "quy tắc" in lower else "functional"
+            append("requirements", cite(segment, kind=kind, formality="candidate"))
+        if meeting_type == "technical_discussion":
+            technical = {
+                "api_integration": ("api", "integration", "tích hợp"),
+                "database": ("database", "cơ sở dữ liệu"),
+                "security": ("security", "bảo mật"),
+                "performance": ("performance", "hiệu năng"),
+                "alternative": ("alternative", "phương án", "lựa chọn"),
+                "architecture": ("kiến trúc", "architecture"),
+            }
+            kind = next(
+                (name for name, words in technical.items() if any(word in lower for word in words)),
+                None,
+            )
+            if kind:
+                append("technical_considerations", cite(segment, kind=kind))
+        if meeting_type == "project_status":
+            status = {
+                "milestone": ("mốc", "milestone"),
+                "blocker": ("blocker", "bị chặn", "vướng"),
+                "risk": ("rủi ro", "risk"),
+                "progress": ("tiến độ", "hoàn thành", "progress"),
+                "dependency": ("phụ thuộc", "dependency"),
+            }
+            kind = next(
+                (name for name, words in status.items() if any(word in lower for word in words)),
+                None,
+            )
+            if kind:
+                append("status_updates", cite(segment, kind=kind))
+        if meeting_type == "issue_incident":
+            incident = {
+                "suspected_cause": ("nghi do", "có thể do", "suspected cause"),
+                "impact": ("ảnh hưởng", "impact"),
+                "workaround": ("tạm thời", "workaround"),
+                "problem": ("sự cố", "lỗi", "incident"),
+            }
+            kind = next(
+                (name for name, words in incident.items() if any(word in lower for word in words)),
+                None,
+            )
+            if kind:
+                append("incident_findings", cite(segment, kind=kind))
+        if meeting_type == "uat_feedback":
+            uat = {
+                "defect": ("không đạt", "thất bại", "failed", "bug", "lỗi"),
+                "observed_result": ("kết quả", "observed", "thực tế"),
+                "customer_feedback": ("phản hồi", "feedback"),
+                "scenario": ("kịch bản", "scenario", "uat"),
+            }
+            kind = next(
+                (name for name, words in uat.items() if any(word in lower for word in words)), None
+            )
+            if kind:
+                append("uat_observations", cite(segment, kind=kind, acceptance_status="pending"))
+    return content
+
+
 class OfflineMinutesService:
     """Generate a new local version without constructing any provider client."""
 
@@ -130,20 +247,27 @@ class OfflineMinutesService:
         self.transcripts = TranscriptStore(meetings)
         self.minutes = MinutesStore(meetings)
 
-    def generate(self, meeting_id: str, run_id: str | None = None) -> str:
+    def generate(
+        self, meeting_id: str, run_id: str | None = None, *, meeting_type: str | None = None
+    ) -> str:
         with self.meetings.activity(meeting_id, "offline_minutes"):
-            return self._generate(meeting_id, run_id)
+            return self._generate(meeting_id, run_id, meeting_type)
 
-    def _generate(self, meeting_id: str, run_id: str | None) -> str:
+    def _generate(self, meeting_id: str, run_id: str | None, meeting_type: str | None) -> str:
         metadata = self.meetings.metadata(meeting_id)
         run_id = run_id or metadata.get("active_run")
         if not run_id:
             raise ValueError("Transcribe this meeting before creating minutes")
         run = self.transcripts.read_run(meeting_id, run_id)
         template = self.minutes.read_template(meeting_id)
-        content = extract_minutes(metadata, run_id, run["working"], template["topic_limit"])
-        content["headings"] = copy.deepcopy(template["headings"])
-        content["guidance"] = template["guidance"]
+        if meeting_type is None:
+            content = extract_minutes(metadata, run_id, run["working"], template["topic_limit"])
+            content["headings"] = copy.deepcopy(template["headings"])
+            content["guidance"] = template["guidance"]
+        else:
+            content = extract_domain_minutes(
+                metadata, run_id, run["working"], meeting_type, template["topic_limit"]
+            )
         return self.minutes.save_version(
             meeting_id,
             run_id,

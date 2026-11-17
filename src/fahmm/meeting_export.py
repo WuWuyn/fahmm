@@ -33,6 +33,8 @@ def render_minutes(content: dict) -> str:
     """Render the saved minutes body used by review and export."""
     if content.get("user_text") is not None:
         return content["user_text"]
+    if content.get("domain_schema_version") == 1:
+        return _render_domain_minutes(content)
     headings = content.get("headings", {})
     parts = [
         f"# {content.get('title', 'Chưa rõ')}",
@@ -58,6 +60,93 @@ def render_minutes(content: dict) -> str:
             stamps = ", ".join(f"{source['start']:.1f}s" for source in item.get("sources", []))
             parts.append(f"- {line}" + (f" [{stamps}]" if stamps else ""))
     return "\n".join(parts)
+
+
+DOMAIN_HEADINGS = {
+    "summary": "Tóm tắt",
+    "topics": "Chủ đề và thảo luận",
+    "requirements": "Yêu cầu ứng viên",
+    "decisions": "Quyết định cần xác minh",
+    "proposed_solutions": "Phương án đề xuất",
+    "open_questions": "Câu hỏi còn mở",
+    "risks_blockers": "Rủi ro và trở ngại",
+    "actions": "Việc cần làm đề xuất",
+    "next_steps": "Bước tiếp theo",
+    "technical_considerations": "Nội dung kỹ thuật",
+    "status_updates": "Cập nhật tiến độ",
+    "incident_findings": "Ghi nhận sự cố",
+    "uat_observations": "Ghi nhận UAT",
+}
+DOMAIN_REVIEW_LABELS = {
+    "needs_review": "Cần xem lại",
+    "confirmed": "Đã xác nhận",
+    "rejected": "Đã loại",
+}
+DOMAIN_ORIGIN_LABELS = {
+    "extractive": "Trích xuất từ phiên âm",
+    "provider": "Bản nháp từ nhà cung cấp",
+    "user_provided": "Người dùng cung cấp",
+}
+DOMAIN_CERTAINTY_LABELS = {
+    "candidate": "Ứng viên",
+    "user_confirmed": "Người dùng xác nhận",
+    "pending": "Chờ xác nhận",
+}
+
+
+def _render_domain_minutes(content: dict) -> str:
+    domain = content["domain"]
+    metadata = domain["metadata"]
+
+    def value(key: str):
+        return metadata[key]["value"]
+
+    participants = ", ".join(value("participants")) or "Chưa rõ"
+    lines = [
+        f"# {value('title') or 'Chưa rõ'}",
+        f"Loại cuộc họp: {domain['meeting_type']}",
+        f"Ngày giờ họp: {value('meeting_datetime') or 'Chưa rõ'}",
+        f"Dự án/khách hàng: {value('project_customer') or 'Chưa rõ'}",
+        f"Người tham dự: {participants}",
+        f"Mục tiêu: {value('objective') or 'Chưa rõ'}",
+    ]
+    for key, heading in DOMAIN_HEADINGS.items():
+        items = [
+            item for item in domain["sections"].get(key, []) if item["review_status"] != "rejected"
+        ]
+        if not items:
+            continue
+        lines.extend(("", f"## {heading}"))
+        for item in items:
+            qualifiers = [
+                DOMAIN_REVIEW_LABELS[item["review_status"]],
+                DOMAIN_ORIGIN_LABELS[item["origin"]],
+            ]
+            if "kind" in item:
+                qualifiers.append(item["kind"])
+            if "formality" in item:
+                qualifiers.append(DOMAIN_CERTAINTY_LABELS[item["formality"]])
+            if "acceptance_status" in item:
+                qualifiers.append(
+                    f"Trạng thái chấp nhận: {DOMAIN_CERTAINTY_LABELS[item['acceptance_status']]}"
+                )
+            if key == "actions":
+                qualifiers.extend(
+                    (
+                        f"Người phụ trách: {item['owner']}",
+                        f"Hạn: {item['due_date']}",
+                        f"{'Đề xuất' if item['confirmation_status'] == 'suggested' else 'Đã xem lại'}; chưa phải công việc được theo dõi",
+                    )
+                )
+            citations = ", ".join(
+                f"đoạn {source['segment_id']} {format_timestamp(source['start'])}–{format_timestamp(source['end'])}"
+                for source in item["sources"]
+            )
+            note = "; ".join(
+                qualifiers + ([citations] if citations else ["không có nguồn phiên âm"])
+            )
+            lines.append(f"- {item['text']} ({note})")
+    return "\n".join(lines)
 
 
 class MeetingExportService:

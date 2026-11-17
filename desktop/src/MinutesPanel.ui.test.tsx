@@ -11,13 +11,29 @@ let versionId: string | null;
 let previewCount: number;
 let minutesOrigin: string;
 let sourceOrigin: string | null;
+let domainMode: boolean;
+let extraVersionId: string | null;
 beforeEach(() => {
   versionId = null; previewCount = 0; minutesOrigin = "extractive"; sourceOrigin = "extractive";
+  domainMode = false; extraVersionId = null;
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
-      case "minutes.list": return { versions: versionId ? [{ version_id: versionId, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin }] : [], activeVersionId: versionId };
-      case "minutes.read": return { version: { manifest: { version_id: versionId, run_id: "r".repeat(32), created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin }, content: { user_text: "# Bản nháp", actions: [] } } };
+      case "minutes.list": return { versions: [versionId, extraVersionId].filter(Boolean).map((id) => ({ version_id: id, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin })), activeVersionId: versionId };
+      case "minutes.read": return { version: { manifest: { version_id: versionId, run_id: "r".repeat(32), created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin }, content: domainMode ? {
+        domain_schema_version: 1, domain: { meeting_type: "general", metadata: {
+          title: { value: "Client call", provenance: "user_provided", sources: [] },
+          meeting_datetime: { value: null, provenance: "unknown", sources: [] },
+          project_customer: { value: null, provenance: "unknown", sources: [] },
+          participants: { value: [], provenance: "unknown", sources: [] },
+          objective: { value: null, provenance: "unknown", sources: [] },
+        }, sections: { topics: [{ item_id: "a".repeat(32), text: "Review API", origin: "extractive",
+          review_status: "needs_review", sources: [{ run_id: "r".repeat(32), segment_id: 1, start: 0, end: 1, excerpt: "Review API" }] }] } },
+      } : { user_text: "# Bản nháp", actions: [] } } };
       case "minutes.renderBody": return { markdown: "# Bản nháp" };
+      case "minutes.sourceDrift": return { sources: domainMode ? [{ location: `sections.topics.${"a".repeat(32)}`,
+        source: { run_id: "r".repeat(32), segment_id: 1, start: 0, end: 1, excerpt: "Review API" },
+        current_text: "Changed API", drifted: true }] : [] };
+      case "minutes.select": return { activeVersionId: extraVersionId };
       case "minutes.template": return { template: { headings: { title: "Tiêu đề" }, guidance: "Review sources", topic_limit: 5 } };
       case "provider.list": return { profiles: [{ id: "p".repeat(32), name: "Provider", model_id: "model", hasKey: false }] };
       case "transcript.list": return { activeRunId: "r".repeat(32) };
@@ -101,4 +117,18 @@ it("copies the saved Markdown only after warning about dirty edits", async () =>
   await waitFor(() => expect(copy).toHaveBeenCalledWith("Saved Markdown"));
   expect(screen.queryByText("Unsaved edits")).toBeNull();
   expect(vi.mocked(exportSaved)).not.toHaveBeenCalled();
+});
+
+it("keeps a dirty domain draft when version switching is cancelled", async () => {
+  domainMode = true; versionId = "m".repeat(32); extraVersionId = "n".repeat(32);
+  const user = userEvent.setup();
+  vi.stubGlobal("confirm", vi.fn(() => false));
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}}
+    onSeek={() => {}} runVersion={0} />);
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  await user.type(screen.getByRole("textbox", { name: "Objective" }), "Review rollout");
+  await waitFor(() => expect(screen.getAllByText("Unsaved edits").length).toBeGreaterThan(0));
+  await user.selectOptions(screen.getByLabelText("Saved version"), extraVersionId);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.select")).toBe(false);
+  expect((screen.getByLabelText("Saved version") as HTMLSelectElement).value).toBe(versionId);
 });

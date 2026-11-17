@@ -207,6 +207,22 @@ class BridgeApplication:
                     params["meetingId"], params["versionId"], params["content"]
                 )
             }
+        elif operation == "minutes.editDomain":
+            result = {
+                "versionId": self.minutes.edit_domain_version(
+                    params["meetingId"], params["versionId"], params["content"]
+                )
+            }
+        elif operation == "minutes.setType":
+            result = {
+                "versionId": self.minutes.set_domain_type(
+                    params["meetingId"], params["versionId"], params["meetingType"]
+                )
+            }
+        elif operation == "minutes.sourceDrift":
+            result = {
+                "sources": self.minutes.source_drift(params["meetingId"], params["versionId"])
+            }
         elif operation == "minutes.select":
             self.minutes.select_version(params["meetingId"], params["versionId"])
             result = {"activeVersionId": params["versionId"]}
@@ -277,7 +293,9 @@ class BridgeApplication:
             }
         elif operation == "minutes.generateOffline":
             result = {
-                "versionId": self.offline_minutes.generate(params["meetingId"], params["runId"])
+                "versionId": self.offline_minutes.generate(
+                    params["meetingId"], params.get("runId"), meeting_type=params.get("meetingType")
+                )
             }
         elif operation == "cloud.preview":
             snapshot = self.cloud_minutes.prepare(
@@ -312,7 +330,11 @@ class BridgeApplication:
             if stored is None or stored[2] < time.monotonic() or stored[1] is None:
                 raise PermissionError("Preview and confirmation are required for each send")
             snapshot, authorization, _ = stored
-            result = {"versionId": self.cloud_minutes.generate(snapshot, authorization)}
+            result = {
+                "versionId": self.cloud_minutes.generate(
+                    snapshot, authorization, meeting_type=params.get("meetingType")
+                )
+            }
         elif operation == "provider.list":
             result = {
                 "profiles": [

@@ -8,7 +8,8 @@ import pytest
 from test_minutes_store import make_meeting_with_run, sample_content
 
 from fahmm import meeting_export
-from fahmm.meeting_export import MeetingExportService
+from fahmm.meeting_export import MeetingExportService, render_minutes
+from fahmm.minutes_domain import new_claim, new_domain_content
 from fahmm.minutes_store import MinutesStore
 from fahmm.models import InstalledModel
 from fahmm.offline_minutes import OfflineMinutesService
@@ -210,3 +211,48 @@ def test_managed_destination_is_rejected(tmp_path):
     model_root.mkdir()
     with pytest.raises(ValueError, match="outside fahmm-managed"):
         service.export_transcript(meeting_id, run_id, model_root / "transcript.txt")
+
+
+def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
+    source = {
+        "run_id": run_id,
+        "segment_id": 1,
+        "start": 0.0,
+        "end": 2.0,
+        "excerpt": "Đã thống nhất thử nghiệm.",
+    }
+    content = new_domain_content("project_status", title="Client status")
+    content["domain"]["sections"]["actions"] = [
+        new_claim(
+            "Đã thống nhất thử nghiệm.",
+            "extractive",
+            sources=[source],
+            owner="Chưa rõ",
+            due_date="Chưa rõ",
+            confirmation_status="suggested",
+        )
+    ]
+    content["domain"]["sections"]["status_updates"] = [
+        new_claim("Đã thống nhất thử nghiệm.", "extractive", sources=[source], kind="progress")
+    ]
+    store = MinutesStore(meetings)
+    version_id = store.save_version(meeting_id, run_id, "extractive", content, "default")
+    saved = store.read_version(meeting_id, version_id)["content"]
+    preview = render_minutes(saved)
+    markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version_id)
+    assert preview in markdown
+    assert "Ngày giờ họp: Chưa rõ" in preview
+    assert "Người phụ trách: Chưa rõ" in preview
+    assert "00:00:00.0–00:00:02.0" in preview
+    assert "Cần xem lại" in preview
+    assert "chưa phải công việc được theo dõi" in preview
+    assert "## Ghi nhận UAT" not in preview
+    assert "## Yêu cầu ứng viên" not in preview
+    edited = copy.deepcopy(saved)
+    edited["user_text"] = "# Bản đã sửa\nNội dung tự do."
+    edited_id = store.edit_version(meeting_id, version_id, edited)
+    freeform = MeetingExportService(meetings).minutes_markdown(meeting_id, edited_id)
+    assert "Nội dung tự do." in freeform
+    assert "## Source references from the underlying draft" in freeform
+    assert "do not automatically verify the edited text" in freeform

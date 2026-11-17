@@ -11,6 +11,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime, useT } from "@/shared/i18n";
 import { useUIStore } from "@/shared/uiStore";
+import { DomainMinutesReview, MEETING_TYPES } from "./DomainMinutesReview";
+import type { DomainContent, DriftEntry } from "./DomainMinutesReview";
 
 type VersionSummary = { version_id: string; created_at: string; review_state: string; origin: string;
   parent_version_id?: string | null; source_origin?: string | null };
@@ -47,6 +49,9 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   const [savedBody, setSavedBody] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editing, setEditing] = useState(false);
+  const [domainDirty, setDomainDirty] = useState(false);
+  const [meetingType, setMeetingType] = useState("general");
+  const [sourceDrift, setSourceDrift] = useState<DriftEntry[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -59,7 +64,8 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [messageName, setMessageName] = useState("");
-  const dirty = editing && editBody !== savedBody;
+  const freeformDirty = editing && editBody !== savedBody;
+  const dirty = freeformDirty || domainDirty;
 
   const refresh = useCallback(async () => {
     const [listing, providerList, runs, templateData] = await Promise.all([
@@ -83,24 +89,29 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   }, [meetingId]);
 
   useEffect(() => { setSelectedVersion(""); setVersion(null); setSavedBody(""); setEditBody("");
-    setSelectedIds([]); setReviewedIds([]); setEditing(false); setMessage("");
+    setSelectedIds([]); setReviewedIds([]); setEditing(false); setDomainDirty(false); setMessage("");
     void refresh().catch(() => setMessage("Could not load minutes and provider profiles."));
   }, [refresh, runVersion]);
   useEffect(() => {
-    if (!selectedVersion) { setVersion(null); setSavedBody(""); return; }
+    if (!selectedVersion) { setVersion(null); setSavedBody(""); setSourceDrift([]); return; }
     let alive = true;
     void Promise.all([
       bridgeCall<{ version: Version }>("minutes.read", { meetingId, versionId: selectedVersion }),
       bridgeCall<{ markdown: string }>("minutes.renderBody", { meetingId, versionId: selectedVersion }),
-    ]).then(([data, rendered]) => {
-      if (alive) { setVersion(data.version); setSavedBody(rendered.markdown); setEditBody(rendered.markdown); setEditing(false); }
+      bridgeCall<{ sources: DriftEntry[] }>("minutes.sourceDrift", { meetingId, versionId: selectedVersion }),
+    ]).then(([data, rendered, drift]) => {
+      if (alive) { setVersion(data.version); setSavedBody(rendered.markdown); setEditBody(rendered.markdown); setEditing(false);
+        setDomainDirty(false); setSourceDrift(drift.sources);
+        const domain = (data.version.content as unknown as DomainContent).domain;
+        if (domain) setMeetingType(domain.meeting_type);
+      }
     }).catch(() => { if (alive) setMessage("Could not open the selected minutes version."); });
     return () => { alive = false; };
   }, [meetingId, selectedVersion]);
   async function generateOffline() {
     setBusy(true); setMessage("");
     try {
-      const data = await bridgeCall<{ versionId: string }>("minutes.generateOffline", { meetingId, runId: null });
+      const data = await bridgeCall<{ versionId: string }>("minutes.generateOffline", { meetingId, runId: null, meetingType });
       await refresh(); setSelectedVersion(data.versionId);
       setMessage("Offline extractive draft saved. Review its citations before approval.");
     } catch { setMessage("Could not create offline minutes. Save a transcript first."); }
@@ -124,7 +135,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   }
 
   async function saveEdit() {
-    if (!version || !dirty) return;
+    if (!version || !freeformDirty) return;
     setBusy(true); setMessage("");
     try {
       const data = await bridgeCall<{ versionId: string }>("minutes.edit", {
@@ -133,6 +144,35 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       await refresh(); setSelectedVersion(data.versionId);
       setMessage("New unverified minutes version saved.");
     } catch { setMessage("Could not save the minutes edit."); }
+    finally { setBusy(false); }
+  }
+
+  async function saveDomain(content: DomainContent) {
+    if (!version) return;
+    setBusy(true); setMessage("");
+    try {
+      const data = await bridgeCall<{ versionId: string }>("minutes.editDomain", {
+        meetingId, versionId: selectedVersion, content,
+      });
+      await refresh(); setSelectedVersion(data.versionId);
+      setMessage("Reviewed claims saved as a new unverified version.");
+    } catch { setMessage("Could not save the domain minutes. Check the date, claims and source citations."); }
+    finally { setBusy(false); }
+  }
+
+  async function chooseMeetingType(nextType: string) {
+    if (dirty && !window.confirm(t("Discard unsaved minutes edits?"))) return;
+    if (!version || !(version.content as unknown as DomainContent).domain) {
+      setMeetingType(nextType); return;
+    }
+    setBusy(true);
+    try {
+      const data = await bridgeCall<{ versionId: string }>("minutes.setType", {
+        meetingId, versionId: selectedVersion, meetingType: nextType,
+      });
+      await refresh(); setSelectedVersion(data.versionId); setMeetingType(nextType);
+      setMessage("Meeting type saved as a new version.");
+    } catch { setMessage("Could not change the meeting type."); }
     finally { setBusy(false); }
   }
 
@@ -188,7 +228,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     try {
       await bridgeCall("cloud.confirm", { previewId: id, accepted: true });
       setPreview(null);
-      const data = await bridgeCall<{ versionId: string }>("cloud.send", { previewId: id });
+      const data = await bridgeCall<{ versionId: string }>("cloud.send", { previewId: id, meetingType });
       await refresh(); setSelectedVersion(data.versionId);
       setMessage("Provider draft saved as unverified minutes.");
     } catch { setPreview(null); setMessage("Provider request failed. Review a new preview before retrying."); }
@@ -217,6 +257,11 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   return <section className="document-panel" aria-label={t("Minutes")}>
     <div className="document-toolbar"><div><h2>{t("Meeting minutes")}</h2><p>{t("Every draft starts unverified.")}</p></div>
       <Button size="sm" disabled={busy || segments.length === 0} onClick={() => void generateOffline()}><Sparkles size={15} /> {t("Offline draft")}</Button></div>
+    <Label htmlFor="minutes-meeting-type">{t("Meeting type")}
+      <NativeSelect id="minutes-meeting-type" value={meetingType} disabled={busy}
+        onChange={(event) => void chooseMeetingType(event.target.value)}>
+        {MEETING_TYPES.map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}
+      </NativeSelect></Label>
     <details className="template-settings"><summary>{t("Edit offline template")}</summary>
       {template && <div className="template-fields">
         {Object.entries(template.headings).map(([key, value]) => <Label key={key}>{t(key.replace(/_/g, " "))}
@@ -248,17 +293,23 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       <span className="hint">{t(versionSourceLabel(version.manifest))}</span></div>}
     {version && <p className="hint">{t("Any action items in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
     {!version && <div className="empty-document">{t("Create a draft from a saved transcript.")}</div>}
+    {version && (version.content as unknown as DomainContent).domain && <DomainMinutesReview
+      key={selectedVersion} content={version.content as unknown as DomainContent} drift={sourceDrift} busy={busy}
+      onSave={saveDomain} onDirtyChange={setDomainDirty} onSeek={onSeek} onOpenSource={onOpenSource} />}
+    {version && (version.content as unknown as DomainContent).domain && <p className="hint">{t("Freeform Markdown edits are separate from claim review and do not verify the edited text.")}</p>}
     {version && (editing ? <Textarea className="minutes-editor" aria-label={t("Edit minutes Markdown")} value={editBody} onChange={(event) => setEditBody(event.target.value)} />
       : <article className="markdown-body"><ReactMarkdown>{savedBody}</ReactMarkdown></article>)}
     {sources.length > 0 && <div className="citation-list"><strong>{t("Source timestamps")}</strong>
       {sources.map((source) => <Button key={source.segment_id} variant="link" size="xs" className="timestamp-button" onClick={() => onSeek(source.start)}>
         {t("Segment {id}", { id: source.segment_id })} · {source.start.toFixed(1)}s</Button>)}</div>}
+    {version && !(version.content as unknown as DomainContent).domain && sources.length > 0 &&
+      <p className="hint">{t("Saved source excerpts are unavailable for this legacy version.")}</p>}
     {onOpenSource && sources.length > 0 && <div className="citation-list"><strong>{t("Open transcript source")}</strong>
       {sources.map((source) => <Button key={source.segment_id} variant="link" size="xs" className="timestamp-button"
         onClick={() => onOpenSource(source.run_id, source.start)}>{t("Segment {id}", { id: source.segment_id })}</Button>)}</div>}
     {version && <div className="document-footer">
       <Button variant="secondary" size="sm" onClick={() => setEditing((value) => !value)}>{t(editing ? "Preview" : "Edit")}</Button>
-      <Button size="sm" disabled={!dirty || busy} onClick={() => void saveEdit()}><Save size={15} /> {t("Save new version")}</Button>
+      <Button size="sm" disabled={!freeformDirty || busy} onClick={() => void saveEdit()}><Save size={15} /> {t("Save new version")}</Button>
       <Button variant="secondary" size="sm" disabled={dirty || version.manifest.review_state === "approved"} onClick={() => void approve()}><Check size={15} /> {t("Approve")}</Button>
       <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(true)}><Copy size={15} /> {t("Copy Markdown")}</Button>
       <Button variant="secondary" size="sm" onClick={() => void exportMarkdown(false)}><Download size={15} /> {t("Export MD")}</Button>

@@ -3,6 +3,8 @@
     { "v": 1, "kind": "request", "id": "r-1", "op": "session.hello", "params": { "versions": [1] } },
     { "v": 1, "kind": "request", "id": "r-2", "op": "system.health", "params": {} },
     { "v": 1, "kind": "request", "id": "r-asr", "op": "asr.startFrom", "params": { "meetingId": "meeting", "modelId": "model", "language": "vi", "startSeconds": 12.5 } },
+    { "v": 1, "kind": "request", "id": "r-minutes", "op": "minutes.generateOffline", "params": { "meetingId": "meeting", "runId": null, "meetingType": "uat_feedback" } },
+    { "v": 1, "kind": "request", "id": "r-drift", "op": "minutes.sourceDrift", "params": { "meetingId": "meeting", "versionId": "version" } },
     { "v": 1, "kind": "response", "id": "r-1", "op": "session.hello", "result": { "selectedVersion": 1, "capabilities": ["system.health"] } },
     { "v": 1, "kind": "event", "event": "job.progress", "jobId": "job_1", "data": { "state": "running", "progress": 0.5 } },
     { "v": 1, "kind": "error", "id": "r-3", "error": { "code": "INVALID_REQUEST", "message": "Invalid request" } }
@@ -14,6 +16,9 @@
     { "v": 1, "kind": "request", "id": "r-2", "op": "session.hello", "params": { "versions": ["1"] } },
     { "v": 1, "kind": "request", "id": "r-asr", "op": "asr.startFrom", "params": { "meetingId": "meeting", "modelId": "model", "language": "vi", "startSeconds": "12.5" } },
     { "v": 1, "kind": "request", "id": "r-asr-missing", "op": "asr.startFrom", "params": { "meetingId": "meeting", "modelId": "model", "language": "vi" } },
+    { "v": 1, "kind": "request", "id": "r-extra", "op": "minutes.sourceDrift", "params": { "meetingId": "meeting", "versionId": "version", "nativePath": "C:/secret" } },
+    { "v": 1, "kind": "request", "id": "r-prototype", "op": "minutes.sourceDrift", "params": { "meetingId": "meeting", "versionId": "version", "toString": "unexpected" } },
+    { "v": 1, "kind": "request", "id": "r-invalid-type", "op": "minutes.generateOffline", "params": { "meetingId": "meeting", "runId": null, "meetingType": 42 } },
     { "v": 1, "kind": "event", "event": "job.progress", "jobId": "job_1", "data": { "state": "running", "progress": "half" } },
     { "v": 1, "kind": "error", "id": "r-3", "error": { "code": "RAW_EXCEPTION", "message": "secret" } }
   ],

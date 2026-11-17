@@ -197,6 +197,19 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .minutes-editor { min-height: 320px; }
 .citation-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .citation-list strong { font-size: 11px; margin-right: 5px; }
+.domain-review { margin: 18px 0; }
+.domain-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+.domain-metadata label, .domain-claim label { display: grid; gap: 6px; font-size: 12px; }
+.domain-metadata small, .domain-claim small { color: var(--muted); }
+.domain-section { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 12px; }
+.domain-section .document-toolbar.secondary { justify-content: space-between; margin: 12px 0; }
+.domain-section h3 { font-size: 14px; font-weight: 700; }
+.domain-claim { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.domain-claim-controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.domain-claim-controls label { min-width: 150px; flex: 1; }
+.domain-source { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; }
+.domain-source p { margin: 5px 0; }
+.domain-source [role="alert"] { color: var(--danger); font-weight: 650; }
 .cloud-section { display: grid; gap: 9px; margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--border); }
 .cloud-header { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 9px; }
 .cloud-header svg { color: var(--accent); flex: none; }

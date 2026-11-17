@@ -1,10 +1,16 @@
 import socket
+import time
 
 import pytest
 from test_minutes_store import make_meeting_with_run
 
 from fahmm.minutes_store import MinutesStore
-from fahmm.offline_minutes import UNKNOWN, OfflineMinutesService, extract_minutes
+from fahmm.offline_minutes import (
+    UNKNOWN,
+    OfflineMinutesService,
+    extract_domain_minutes,
+    extract_minutes,
+)
 from fahmm.transcripts import TranscriptStore
 
 
@@ -76,3 +82,110 @@ def test_template_regeneration_is_offline_and_preserves_approved_version(tmp_pat
     assert "sửa bản nháp" in new_content["decisions"][0]["text"]
     assert minutes.read_version(meeting_id, first) == approved
     assert minutes.read_version(meeting_id, second)["manifest"]["review_state"] == "unverified"
+
+
+@pytest.mark.parametrize(
+    ("meeting_type", "text", "section", "kind"),
+    [
+        ("requirement_gathering", "Khách hàng yêu cầu API xuất CSV.", "requirements", "functional"),
+        (
+            "technical_discussion",
+            "Cân nhắc tích hợp API v2.",
+            "technical_considerations",
+            "api_integration",
+        ),
+        ("project_status", "Mốc milestone chưa hoàn thành.", "status_updates", "milestone"),
+        (
+            "issue_incident",
+            "Nghi do database timeout gây lỗi.",
+            "incident_findings",
+            "suspected_cause",
+        ),
+        ("uat_feedback", "UAT scenario 1 failed.", "uat_observations", "defect"),
+    ],
+)
+def test_domain_offline_candidates_are_cited_and_unverified(meeting_type, text, section, kind):
+    content = extract_domain_minutes(
+        {"name": "Client A", "created_at": "2026-11-17T09:00:00+07:00"},
+        "a" * 32,
+        [{"id": 1, "start": 0.0, "end": 2.0, "text": text}],
+        meeting_type,
+    )
+    domain = content["domain"]
+    assert domain["metadata"]["meeting_datetime"]["value"] is None
+    item = domain["sections"][section][0]
+    assert item["text"] == text
+    assert item["kind"] == kind
+    assert item["sources"][0]["excerpt"] == text
+    assert item["review_status"] == "needs_review"
+    assert item["origin"] == "extractive"
+
+
+def test_domain_alternatives_do_not_become_decisions_and_cause_is_not_confirmed():
+    segments = [
+        {"id": 1, "start": 0, "end": 2, "text": "Đề xuất phương án API A, chưa thống nhất."},
+        {"id": 2, "start": 2, "end": 4, "text": "Nghi do database timeout."},
+    ]
+    technical = extract_domain_minutes({}, "a" * 32, segments, "technical_discussion")
+    assert "decisions" not in technical["domain"]["sections"]
+    assert technical["domain"]["sections"]["proposed_solutions"]
+    incident = extract_domain_minutes({}, "a" * 32, segments, "issue_incident")
+    assert {item["kind"] for item in incident["domain"]["sections"]["incident_findings"]} == {
+        "suspected_cause"
+    }
+
+
+def test_domain_uat_failure_is_not_acceptance_and_action_has_no_task_state():
+    segments = [
+        {"id": 1, "start": 0, "end": 2, "text": "UAT scenario đăng nhập failed."},
+        {"id": 2, "start": 2, "end": 4, "text": "Cần làm bản sửa API."},
+    ]
+    content = extract_domain_minutes({}, "a" * 32, segments, "uat_feedback")
+    sections = content["domain"]["sections"]
+    assert sections["uat_observations"][0]["acceptance_status"] == "pending"
+    assert sections["actions"][0]["owner"] == sections["actions"][0]["due_date"] == UNKNOWN
+    assert sections["actions"][0]["confirmation_status"] == "suggested"
+    assert "task_id" not in sections["actions"][0]
+    assert "assigned" not in sections["actions"][0]
+
+
+def test_domain_generation_saves_locally_with_network_blocked(tmp_path, monkeypatch):
+    meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path)
+
+    def blocked(*_args, **_kwargs):
+        raise AssertionError("Offline minutes tried to access the network")
+
+    monkeypatch.setattr(socket.socket, "connect", blocked)
+    version_id = OfflineMinutesService(meetings).generate(
+        meeting_id, meeting_type="requirement_gathering"
+    )
+    saved = MinutesStore(meetings).read_version(meeting_id, version_id)
+    assert saved["content"]["domain"]["meeting_type"] == "requirement_gathering"
+
+
+def test_representative_long_domain_transcript_remains_bounded():
+    segments = [
+        {
+            "id": index,
+            "start": float(index),
+            "end": float(index + 1),
+            "text": f"Thảo luận API v2 mục {index}.",
+        }
+        for index in range(1500)
+    ]
+    started = time.perf_counter()
+    content = extract_domain_minutes({}, "a" * 32, segments, "technical_discussion")
+    assert len(content["domain"]["sections"]["technical_considerations"]) == 100
+    assert time.perf_counter() - started < 10
+
+
+def test_domain_excerpt_keeps_exact_working_text_whitespace():
+    content = extract_domain_minutes(
+        {},
+        "a" * 32,
+        [{"id": 1, "start": 0, "end": 1, "text": "  API v2  "}],
+        "technical_discussion",
+    )
+    claim = content["domain"]["sections"]["topics"][0]
+    assert claim["text"] == "API v2"
+    assert claim["sources"][0]["excerpt"] == "  API v2  "
