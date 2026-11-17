@@ -260,6 +260,8 @@ export const vi: Record<string, string> = {
   "Incident findings": "Ghi nhận sự cố",
   "UAT observations": "Ghi nhận UAT",
   "Add claim": "Thêm nhận định",
+  "Remove claim": "Xóa nhận định",
+  "Remove claim {id}": "Xóa nhận định {id}",
   "Claim text": "Nội dung nhận định",
   "Review state": "Trạng thái duyệt",
   "needs_review": "Cần xem lại",

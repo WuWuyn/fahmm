@@ -204,6 +204,11 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .domain-section .document-toolbar.secondary { justify-content: space-between; margin: 12px 0; }
 .domain-section h3 { font-size: 14px; font-weight: 700; }
 .domain-claim { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.domain-claim-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 7px; }
+.domain-claim-heading label { font-size: 12px; font-weight: 650; }
+.domain-claim > textarea { width: 100%; }
+.domain-remove-button { color: var(--muted); }
+.domain-remove-button:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .domain-claim-controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
 .domain-claim-controls label { min-width: 150px; flex: 1; }
 .domain-source { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; }

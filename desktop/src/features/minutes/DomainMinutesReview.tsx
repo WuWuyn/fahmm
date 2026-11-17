@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +53,11 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
   const updateClaim = (section: string, index: number, patch: Partial<DomainClaim>) => update((next) => {
     Object.assign(next.domain.sections[section][index], patch);
   });
+  const removeClaim = (section: string, itemId: string) => update((next) => {
+    const remaining = next.domain.sections[section].filter((item) => item.item_id !== itemId);
+    if (remaining.length) next.domain.sections[section] = remaining;
+    else delete next.domain.sections[section];
+  });
   const sections = [...COMMON_SECTIONS, ...(TYPE_SECTIONS[draft.domain.meeting_type] || [])];
   const metadata = draft.domain.metadata;
   return <div className="domain-review">
@@ -87,8 +93,12 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
           (next.domain.sections[section] ||= []).push(claim);
         })}>{t("Add claim")}</Button></div>
       {(draft.domain.sections[section] || []).map((claim, index) => <div className="domain-claim" key={claim.item_id}>
-        <Label htmlFor={`claim-${claim.item_id}`}>{t("Claim text")}<Textarea id={`claim-${claim.item_id}`} value={claim.text} onChange={(event) => updateClaim(section, index,
-          { text: event.target.value, origin: "user_provided", review_status: "needs_review" })} /></Label>
+        <div className="domain-claim-heading"><Label htmlFor={`claim-${claim.item_id}`}>{t("Claim text")}</Label>
+          <Button variant="ghost" size="sm" className="domain-remove-button"
+            aria-label={t("Remove claim {id}", { id: claim.item_id.slice(0, 8) })} disabled={busy}
+            onClick={() => removeClaim(section, claim.item_id)}><Trash2 size={14} />{t("Remove claim")}</Button></div>
+        <Textarea id={`claim-${claim.item_id}`} value={claim.text} onChange={(event) => updateClaim(section, index,
+          { text: event.target.value, origin: "user_provided", review_status: "needs_review" })} />
         <div className="domain-claim-controls">
           <Label htmlFor={`review-${claim.item_id}`}>{t("Review state")}<NativeSelect id={`review-${claim.item_id}`} value={claim.review_status} onChange={(event) => updateClaim(section, index,
             { review_status: event.target.value as DomainClaim["review_status"] })}>

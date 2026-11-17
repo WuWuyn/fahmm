@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DomainMinutesReview, type DomainContent, type DriftEntry, MEETING_TYPES } from "@/features/minutes/DomainMinutesReview";
 import { useUIStore } from "@/shared/uiStore";
@@ -55,6 +55,34 @@ it("shows saved excerpt, warns about drift, seeks audio, and saves a reviewed co
   expect(saved.domain.sections.topics[0].review_status).toBe("confirmed");
 });
 
+it("can add and remove a blank claim without leaving the draft dirty", async () => {
+  const user = userEvent.setup();
+  render(<DomainMinutesReview content={content("general")} drift={[]} busy={false} onSave={vi.fn()}
+    onDirtyChange={vi.fn()} onSeek={vi.fn()} />);
+  const decisions = screen.getByText("Decisions").closest(".domain-section") as HTMLElement;
+  await user.click(within(decisions).getByRole("button", { name: "Add claim" }));
+  expect(within(decisions).getByRole("textbox", { name: "Claim text" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Save reviewed claims as new version" }).hasAttribute("disabled")).toBe(false);
+  await user.click(within(decisions).getByRole("button", { name: /Remove claim/ }));
+  expect(within(decisions).queryByRole("textbox", { name: "Claim text" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Save reviewed claims as new version" }).hasAttribute("disabled")).toBe(true);
+});
+
+it("removes a saved claim from the new version without changing the original", async () => {
+  const user = userEvent.setup();
+  const original = content("general");
+  const onSave = vi.fn(async (_draft: DomainContent) => undefined);
+  render(<DomainMinutesReview content={original} drift={[]} busy={false} onSave={onSave}
+    onDirtyChange={vi.fn()} onSeek={vi.fn()} />);
+  const topics = screen.getByText("Topics").closest(".domain-section") as HTMLElement;
+  await user.click(within(topics).getByRole("button", { name: "Remove claim aaaaaaaa" }));
+  expect(within(topics).queryByRole("textbox", { name: "Claim text" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Save reviewed claims as new version" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  expect((onSave.mock.calls[0][0] as DomainContent).domain.sections.topics).toBeUndefined();
+  expect(original.domain.sections.topics[0].text).toBe("Review API");
+});
+
 it("switches controls to Vietnamese without changing saved content", () => {
   const draft = content("technical_discussion");
   const view = render(<DomainMinutesReview content={draft} drift={[]} busy={false} onSave={vi.fn()}
@@ -64,5 +92,6 @@ it("switches controls to Vietnamese without changing saved content", () => {
   view.rerender(<DomainMinutesReview content={draft} drift={[]} busy={false} onSave={vi.fn()}
     onDirtyChange={vi.fn()} onSeek={vi.fn()} />);
   expect(screen.getByText("Nội dung kỹ thuật")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Xóa nhận định aaaaaaaa" })).toBeTruthy();
   expect(draft.domain.sections.topics[0].text).toBe("Review API");
 });
