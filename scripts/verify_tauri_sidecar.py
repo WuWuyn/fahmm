@@ -13,6 +13,7 @@ import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
+from zipfile import ZipFile
 
 import numpy as np
 
@@ -135,12 +136,31 @@ def verify(*, offline_only: bool = False) -> dict:
                 assert [item["id"] for item in sidecar.result("meeting.list")["meetings"]] == [
                     meeting
                 ]
-                offline = sidecar.result("minutes.generateOffline", meetingId=meeting, runId=None)
+                offline = sidecar.result(
+                    "minutes.generateOffline", meetingId=meeting, runId=None,
+                    meetingType="general",
+                )
                 active_version = offline["versionId"]
                 version = sidecar.result(
                     "minutes.read", meetingId=meeting, versionId=offline["versionId"]
                 )["version"]
                 assert version["manifest"]["review_state"] == "unverified"
+                claims = [
+                    claim for items in version["content"]["domain"]["sections"].values()
+                    for claim in items
+                ]
+                assert claims
+                confirmed = claims[0]
+                confirmed["review_status"] = "confirmed"
+                reviewed_id = sidecar.result(
+                    "minutes.editDomain", meetingId=meeting, versionId=offline["versionId"],
+                    content=version["content"],
+                )["versionId"]
+                rendered = sidecar.result(
+                    "minutes.renderBody", meetingId=meeting, versionId=reviewed_id
+                )["markdown"]
+                assert f"- {confirmed['text']}\n" in rendered
+                active_version = reviewed_id
                 ticket = sidecar.result("media.ticket", meetingId=meeting)["ticket"]
                 assert sidecar.result("media.resolve", meetingId=meeting, ticket=ticket)["size"] > 0
                 assert (
@@ -169,12 +189,22 @@ def verify(*, offline_only: bool = False) -> dict:
                     "minutes.generateOffline", meetingId=imported, runId=imported_run
                 )["versionId"]
                 minutes_path = data_root / "minutes.md"
+                word_path = data_root / "minutes.docx"
                 transcript_path = data_root / "transcript.txt"
+                plain_path = data_root / "transcript-plain.txt"
+                audio_path = data_root / "recording-export.wav"
                 assert sidecar.result(
                     "export.writeMinutes",
                     meetingId=imported,
                     versionId=imported_version,
                     nativePath=str(minutes_path),
+                    overwrite=False,
+                )["saved"]
+                assert sidecar.result(
+                    "export.writeMinutesDocx",
+                    meetingId=imported,
+                    versionId=imported_version,
+                    nativePath=str(word_path),
                     overwrite=False,
                 )["saved"]
                 assert sidecar.result(
@@ -184,8 +214,25 @@ def verify(*, offline_only: bool = False) -> dict:
                     nativePath=str(transcript_path),
                     overwrite=False,
                 )["saved"]
+                assert sidecar.result(
+                    "export.writeTranscriptPlain",
+                    meetingId=imported,
+                    runId=imported_run,
+                    nativePath=str(plain_path),
+                    overwrite=False,
+                )["saved"]
+                assert sidecar.result("export.audioInfo", meetingId=imported)["extension"] == "wav"
+                assert sidecar.result(
+                    "export.writeAudio", meetingId=imported,
+                    nativePath=str(audio_path), overwrite=False,
+                )["saved"]
                 assert "Thống nhất thử nghiệm" in minutes_path.read_text(encoding="utf-8")
+                with ZipFile(word_path) as word:
+                    assert word.testzip() is None
+                    assert "Thống nhất thử nghiệm" in word.read("word/document.xml").decode("utf-8")
                 assert "Thống nhất thử nghiệm" in transcript_path.read_text(encoding="utf-8")
+                assert plain_path.read_text(encoding="utf-8") == "Thống nhất thử nghiệm\n"
+                assert audio_path.read_bytes() == source.read_bytes()
                 sidecar.result("meeting.delete", meetingId=imported)
                 assert source.is_file() and minutes_path.is_file() and transcript_path.is_file()
                 assert (

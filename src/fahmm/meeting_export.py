@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 import uuid
 from pathlib import Path
 
+from fahmm.docx_export import render_docx
+from fahmm.library import MeetingLibrary
 from fahmm.minutes_store import MinutesStore
 from fahmm.storage import MeetingStore
 from fahmm.transcripts import TranscriptStore
@@ -118,14 +121,33 @@ def _render_domain_minutes(content: dict) -> str:
         f"Người tham dự: {participants}",
         f"Mục tiêu: {value('objective') or 'Chưa rõ'}",
     ]
+    universal_sections = {"summary", "topics", "requirements", "decisions", "proposed_solutions",
+                          "open_questions", "risks_blockers", "actions", "next_steps",
+                          "technical_considerations"}
     for key, heading in DOMAIN_HEADINGS.items():
+        if domain["meeting_type"] == "general" and key not in universal_sections:
+            continue
         items = [
             item for item in domain["sections"].get(key, []) if item["review_status"] != "rejected"
         ]
-        if not items:
+        if not items and domain["meeting_type"] != "general":
             continue
         lines.extend(("", f"## {heading}"))
+        if not items:
+            lines.append("Chưa có thông tin được xác minh từ bản phiên âm.")
+            continue
         for item in items:
+            if item["review_status"] == "confirmed":
+                line = f"- {item['text']}"
+                if key == "actions":
+                    details = [
+                        f"Người phụ trách: {item['owner']}" if item["owner"] != "Chưa rõ" else "",
+                        f"Hạn: {item['due_date']}" if item["due_date"] != "Chưa rõ" else "",
+                    ]
+                    if any(details):
+                        line += " — " + " · ".join(detail for detail in details if detail)
+                lines.append(line)
+                continue
             qualifiers = [
                 DOMAIN_REVIEW_LABELS[item["review_status"]],
                 DOMAIN_ORIGIN_LABELS[item["origin"]],
@@ -159,18 +181,16 @@ def _render_domain_minutes(content: dict) -> str:
 
 class MeetingExportService:
     def __init__(self, meetings: MeetingStore, model_root: Path | None = None) -> None:
+        self.meetings = meetings
         self.minutes = MinutesStore(meetings)
         self.transcripts = TranscriptStore(meetings)
+        self.library = MeetingLibrary(meetings)
         self._managed_roots = (
             meetings.root.resolve(),
             (model_root or meetings.root.parent / "models").resolve(),
         )
 
-    def _write_text(
-        self, destination: Path | None, content: str, *, overwrite: bool
-    ) -> Path | None:
-        if destination is None:
-            return None
+    def _validated_target(self, destination: Path, *, overwrite: bool) -> Path:
         target = Path(destination)
         if not target.is_absolute():
             raise ValueError("Choose an absolute export destination")
@@ -181,9 +201,17 @@ class MeetingExportService:
             raise FileNotFoundError("Export destination folder does not exist")
         if target.exists() and not overwrite:
             raise FileExistsError("Confirm before replacing an existing export")
+        return target
+
+    def _write_bytes(
+        self, destination: Path | None, content: bytes, *, overwrite: bool
+    ) -> Path | None:
+        if destination is None:
+            return None
+        target = self._validated_target(destination, overwrite=overwrite)
         temporary = target.parent / f".{target.name}-{uuid.uuid4().hex}.tmp"
         try:
-            with temporary.open("w", encoding="utf-8", newline="\n") as file:
+            with temporary.open("wb") as file:
                 file.write(content)
                 file.flush()
                 os.fsync(file.fileno())
@@ -196,6 +224,9 @@ class MeetingExportService:
             temporary.unlink(missing_ok=True)
         return target
 
+    def _write_text(self, destination: Path | None, content: str, *, overwrite: bool) -> Path | None:
+        return self._write_bytes(destination, content.encode("utf-8"), overwrite=overwrite)
+
     def export_minutes(
         self, meeting_id: str, version_id: str, destination: Path | None, *, overwrite: bool = False
     ) -> Path | None:
@@ -203,6 +234,18 @@ class MeetingExportService:
             return None
         return self._write_text(
             destination, self.minutes_markdown(meeting_id, version_id), overwrite=overwrite
+        )
+
+    def export_minutes_docx(
+        self, meeting_id: str, version_id: str, destination: Path | None, *, overwrite: bool = False
+    ) -> Path | None:
+        if destination is None:
+            return None
+        if Path(destination).suffix.lower() != ".docx":
+            raise ValueError("Choose a .docx export destination")
+        return self._write_bytes(
+            destination, render_docx(self.minutes_markdown(meeting_id, version_id)),
+            overwrite=overwrite,
         )
 
     def export_transcript(
@@ -213,6 +256,52 @@ class MeetingExportService:
         return self._write_text(
             destination, self.transcript_text(meeting_id, run_id), overwrite=overwrite
         )
+
+    def export_transcript_plain(
+        self, meeting_id: str, run_id: str, destination: Path | None, *, overwrite: bool = False
+    ) -> Path | None:
+        if destination is None:
+            return None
+        return self._write_text(
+            destination, self.transcript_plain_text(meeting_id, run_id), overwrite=overwrite
+        )
+
+    def transcript_plain_text(self, meeting_id: str, run_id: str) -> str:
+        run = self.transcripts.read_run(meeting_id, run_id)
+        lines = [segment["text"].strip() for segment in run["working"] if segment["text"].strip()]
+        return "\n".join(lines) + "\n" if lines else ""
+
+    def audio_info(self, meeting_id: str) -> dict[str, str]:
+        source = self.library.audio_path(meeting_id)
+        extension = source.suffix.lower()
+        if extension not in {".wav", ".mp3", ".m4a", ".flac"} or source.stat().st_size == 0:
+            raise ValueError("Meeting audio is missing or unsupported")
+        return {"fileName": f"recording{extension}", "extension": extension[1:]}
+
+    def export_audio(
+        self, meeting_id: str, destination: Path | None, *, overwrite: bool = False
+    ) -> Path | None:
+        if destination is None:
+            return None
+        with self.meetings.activity(meeting_id, "audio_export"):
+            source = self.library.audio_path(meeting_id)
+            extension = self.audio_info(meeting_id)["extension"]
+            if Path(destination).suffix.lower() != f".{extension}":
+                raise ValueError(f"Choose a .{extension} export destination")
+            target = self._validated_target(destination, overwrite=overwrite)
+            temporary = target.parent / f".{target.name}-{uuid.uuid4().hex}.tmp"
+            try:
+                with source.open("rb") as input_file, temporary.open("xb") as output_file:
+                    shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
+                    output_file.flush()
+                    os.fsync(output_file.fileno())
+                if overwrite:
+                    os.replace(temporary, target)
+                else:
+                    os.rename(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+            return target
 
     def transcript_text(self, meeting_id: str, run_id: str) -> str:
         run = self.transcripts.read_run(meeting_id, run_id)

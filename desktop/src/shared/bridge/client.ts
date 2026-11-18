@@ -23,8 +23,22 @@ export async function importAudio(): Promise<{ cancelled?: boolean; meetingId?: 
   return invoke("bridge_import");
 }
 
+export async function demoAudioAvailable(): Promise<boolean> {
+  if (!isTauri()) return false;
+  const result = await invoke<{ available: boolean }>("bridge_demo_status");
+  return result.available;
+}
+
+export async function importDemoAudio(): Promise<{ meetingId: string }> {
+  return invoke("bridge_import_demo");
+}
+
 export async function exportSaved(
-  meetingId: string, documentId: string, documentKind: "minutes" | "transcript",
+  meetingId: string, documentId: string, documentKind: "minutes" | "minutesWord" | "transcript" | "transcriptPlain",
 ): Promise<{ cancelled?: boolean; saved?: boolean; displayName?: string }> {
   return invoke("bridge_export", { meetingId, documentId, documentKind });
+}
+
+export async function exportAudio(meetingId: string): Promise<{ cancelled?: boolean; saved?: boolean; displayName?: string }> {
+  return invoke("bridge_export_audio", { meetingId });
 }

@@ -3,7 +3,7 @@ import { AudioLines, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } 
 import { AudioPlayer } from "./AudioPlayer";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
 import { TranscriptPanel } from "@/features/transcript/TranscriptPanel";
-import { bridgeCall, importAudio } from "@/shared/bridge/client";
+import { bridgeCall, demoAudioAvailable, importAudio, importDemoAudio } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -40,6 +40,8 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   const [runVersion, setRunVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [demoAvailable, setDemoAvailable] = useState(false);
+  const [demoImporting, setDemoImporting] = useState(false);
   const [cleanup, setCleanup] = useState<{ deletions: string[]; imports: string[] }>({ deletions: [], imports: [] });
 
   const refreshCleanup = useCallback(async () => {
@@ -59,13 +61,40 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
     finally { setLoading(false); }
   }, [backendReady]);
   useEffect(() => { void refresh(); void refreshCleanup(); }, [refresh, refreshCleanup]);
+  useEffect(() => {
+    let active = true;
+    if (!backendReady) { setDemoAvailable(false); return; }
+    void demoAudioAvailable().then((available) => { if (active) setDemoAvailable(available); })
+      .catch(() => { if (active) setDemoAvailable(false); });
+    return () => { active = false; };
+  }, [backendReady]);
+
+  async function showImportedMeeting(meetingId: string) {
+    await refresh();
+    setQuery("");
+    setSelectedId(meetingId);
+    setTab("transcript");
+    setSeekTo(null);
+    setPlayheadSeconds(0);
+    setAudioDurationSeconds(0);
+  }
 
   async function addMeeting() {
     setMessage("");
     try {
       const result = await importAudio();
-      if (result.meetingId) { await refresh(); setSelectedId(result.meetingId); setPlayheadSeconds(0); setAudioDurationSeconds(0); }
+      if (result.meetingId) await showImportedMeeting(result.meetingId);
     } catch { setMessage("Could not import audio. Choose a supported WAV, MP3, M4A, or FLAC file."); }
+  }
+
+  async function addDemoMeeting() {
+    setMessage("");
+    setDemoImporting(true);
+    try {
+      const result = await importDemoAudio();
+      await showImportedMeeting(result.meetingId);
+    } catch { setMessage("Could not add the sample recording. Check the local demo file and try again."); }
+    finally { setDemoImporting(false); }
   }
 
   async function deleteMeeting(meeting: Meeting) {
@@ -111,6 +140,13 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
     <div className="meetings-layout"><aside className="meeting-list" aria-label={t("Saved meetings")}>
       <div className="meeting-list-header"><h1 id="meetings-heading">{t("Meetings")}</h1><span className="count-badge">{meetings.length}</span></div>
       <Button variant="outline" className="meeting-import" disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={19} /> {t("Import audio")}</Button>
+      {demoAvailable && <div className="meeting-demo">
+        <strong><AudioLines size={17} aria-hidden="true" />{t("Sample meeting · 60 min")}</strong>
+        <p>{t("Fictional retail requirements, read by one synthetic Vietnamese voice.")}</p>
+        <Button variant="secondary" size="sm" disabled={!backendReady || demoImporting} onClick={() => void addDemoMeeting()}>
+          {demoImporting ? t("Adding sample…") : t("Use sample recording")}
+        </Button>
+      </div>}
       <div className="meeting-search"><Search size={18} aria-hidden="true" /><Input aria-label={t("Search meetings")} placeholder={t("Search meetings…")}
         value={query} onChange={(event) => setQuery(event.target.value)} /></div>
       {!backendReady && meetings.length === 0 && <p>{t("Connect the local backend to load meetings.")}</p>}

@@ -38,6 +38,8 @@ The [v1 product requirements and acceptance criteria](docs/requirements-v1.md) a
 
 ## Run the Windows app
 
+For an installable Windows build, open the [FAHMM download folder on Google Drive](https://drive.google.com/drive/u/0/folders/1HGgooN-Cgbq7YI-gb39-j2JaSld2Uyon) and use an installer (`.exe` setup or `.msi`). The standalone `fahmm-desktop.exe` does not include the Python sidecar and is not an installer.
+
 The desktop interface uses React, TypeScript, Vite, Tailwind CSS v4, and shadcn/ui in Tauri. It defaults to a graphite theme with blue accents and offers a light theme. The existing Python processing core runs as a bundled sidecar.
 
 On Windows 10/11 x64, install [uv](https://docs.astral.sh/uv/getting-started/installation/), Node.js, Rust, and the Visual Studio C++ build tools. From the repository root:
@@ -62,7 +64,7 @@ Meeting data is stored under `%LOCALAPPDATA%\fahmm\meetings\<id>`. Imports prese
 
 To roll back, close Tauri first, check the SHA-256 file beside `release/fahmm-0.1.0-windows-x64.zip`, extract that earlier Qt candidate, and run its `fahmm.exe`. It reads the same `%LOCALAPPDATA%\fahmm` meeting library; keep a backup before testing a rollback on personal data. Never run both UIs at once because they share one instance lock.
 
-The earlier Qt portable candidate remains under the ignored `release/` directory for rollback. To build the Tauri sidecar, run `uv run --locked python scripts/build_sidecar.py` from the repository root, then `npm run tauri build` from `desktop/`. The generated sidecar is included as a Tauri external binary. **Do not publicly distribute the candidate while bundled native dependency licenses and clean-machine checks remain open.**
+The earlier Qt portable candidate remains under the ignored `release/` directory for rollback. To build the Tauri sidecar, run `uv run --locked python scripts/build_sidecar.py` from the repository root, then `npm run tauri build` from `desktop/`. The generated sidecar is included as a Tauri external binary. The Tauri build now checks the sidecar's bridge capabilities against the current contract and stops if the sidecar is stale. **Do not publicly distribute the candidate while bundled native dependency licenses and clean-machine checks remain open.**
 
 For the current internal Tauri candidate, use the [first-run guide](docs/tauri-first-run.md), [v1 acceptance record](docs/v1-release-acceptance.md), and [native package review](docs/v1-native-license-review.md). The Tauri portable ZIP and MSI/NSIS installers were built from a recorded commit; real-meeting and clean-machine gates are still open.
 

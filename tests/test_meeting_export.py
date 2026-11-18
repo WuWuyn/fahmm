@@ -3,6 +3,8 @@
 import copy
 import socket
 import uuid
+import xml.etree.ElementTree as ET
+from zipfile import ZipFile
 
 import pytest
 from test_minutes_store import make_meeting_with_run, sample_content
@@ -39,6 +41,36 @@ def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
     assert "Bản chưa duyệt" in second
 
 
+def test_word_export_uses_selected_saved_version_and_preserves_review_notice(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
+    versions = MinutesStore(meetings)
+    older = versions.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id), "default"
+    )
+    newer = versions.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id, "Bản mới"), "default"
+    )
+    destination = tmp_path / "minutes.docx"
+    service = MeetingExportService(meetings)
+    assert service.export_minutes_docx(meeting_id, newer, destination) == destination
+    with ZipFile(destination) as archive:
+        assert archive.testzip() is None
+        assert {"[Content_Types].xml", "_rels/.rels", "word/document.xml",
+                "word/styles.xml", "word/_rels/document.xml.rels"} <= set(archive.namelist())
+        root = ET.fromstring(archive.read("word/document.xml"))
+    text = "\n".join(node.text or "" for node in root.iter()
+                     if node.tag.endswith("}t"))
+    assert "Bản mới" in text
+    assert "Đã thống nhất thử nghiệm." not in text
+    assert "Review state: Unverified" in text
+    assert "Any action items in these minutes are suggestions" in text
+    assert "[0.0s]" in text
+    with pytest.raises(FileExistsError, match="Confirm"):
+        service.export_minutes_docx(meeting_id, older, destination)
+    with pytest.raises(ValueError, match=".docx"):
+        service.export_minutes_docx(meeting_id, older, tmp_path / "wrong.md")
+
+
 def test_export_labels_action_entries_as_suggestions(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     content = sample_content(run_id)
@@ -67,6 +99,18 @@ def test_export_labels_action_entries_as_suggestions(tmp_path):
         in markdown
     )
     assert "Kiểm tra thử nghiệm" in markdown
+
+
+def test_universal_draft_export_includes_empty_sections_and_sources(tmp_path):
+    meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path)
+    version_id = OfflineMinutesService(meetings).generate(meeting_id, meeting_type="general")
+    markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version_id)
+    assert "## Tóm tắt" in markdown
+    assert "## Yêu cầu ứng viên" in markdown
+    assert "## Quyết định cần xác minh" in markdown
+    assert "Chưa có thông tin được xác minh từ bản phiên âm." in markdown
+    assert "đoạn 1" in markdown
+    assert "## Ghi nhận UAT" not in markdown
 
 
 def test_edited_minutes_keep_labeled_underlying_sources(tmp_path):
@@ -134,7 +178,7 @@ def test_provider_edited_export_labels_origin_and_action_caveat_without_actions(
 
 
 def test_transcript_export_uses_selected_working_run(tmp_path):
-    meetings, meeting_id, earlier = make_meeting_with_run(tmp_path)
+    meetings, meeting_id, earlier = make_meeting_with_run(tmp_path / "meetings")
     transcripts = TranscriptStore(meetings)
     transcripts.save_edits(meeting_id, earlier, {1: "Đã sửa bản ghi trước."})
     later = uuid.uuid4().hex
@@ -157,6 +201,34 @@ def test_transcript_export_uses_selected_working_run(tmp_path):
     assert "Đã thống nhất thử nghiệm." not in old_text
     assert "Nội dung mới." not in old_text
     assert new_text == "[00:00:03.0–00:00:04.5] Nội dung mới.\n"
+    assert service.transcript_plain_text(meeting_id, earlier) == "Đã sửa bản ghi trước.\n"
+    assert service.transcript_plain_text(meeting_id, later) == "Nội dung mới.\n"
+    plain_destination = tmp_path / "transcript-plain.txt"
+    assert service.export_transcript_plain(meeting_id, later, plain_destination) == plain_destination
+    assert plain_destination.read_text(encoding="utf-8") == "Nội dung mới.\n"
+
+
+def test_audio_export_copies_original_format_without_modifying_source(tmp_path):
+    meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path / "meetings")
+    source = meetings._meeting_dir(meeting_id) / "audio.mp3"
+    original = b"ID3" + bytes(range(256)) * 8192
+    source.write_bytes(original)
+    meetings.update_metadata(meeting_id, state="completed", audio_file=source.name)
+    service = MeetingExportService(meetings)
+    assert service.audio_info(meeting_id) == {
+        "fileName": "recording.mp3", "extension": "mp3",
+    }
+    destination = tmp_path / "meeting.mp3"
+    assert service.export_audio(meeting_id, None) is None
+    assert service.export_audio(meeting_id, destination) == destination
+    assert destination.read_bytes() == source.read_bytes() == original
+    with pytest.raises(FileExistsError, match="Confirm"):
+        service.export_audio(meeting_id, destination)
+    assert destination.read_bytes() == original
+    with pytest.raises(ValueError, match=".mp3"):
+        service.export_audio(meeting_id, tmp_path / "wrong.wav")
+    with pytest.raises(ValueError, match="outside fahmm-managed"):
+        service.export_audio(meeting_id, meetings.root / meeting_id / "copy.mp3")
 
 
 def test_export_cancel_overwrite_and_restricted_no_network(tmp_path, monkeypatch):
@@ -257,3 +329,34 @@ def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp
     assert "Nội dung tự do." in freeform
     assert "## Source references from the underlying draft" in freeform
     assert "do not automatically verify the edited text" in freeform
+
+
+def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sources(tmp_path):
+    meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
+    source = {
+        "run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0,
+        "excerpt": "Đã thống nhất thử nghiệm.",
+    }
+    content = new_domain_content("general", title="Biên bản")
+    summary = new_claim("Đã thống nhất thử nghiệm.", "extractive", sources=[source])
+    summary["review_status"] = "confirmed"
+    pending = new_claim("Cần kiểm tra thêm.", "extractive", sources=[source])
+    action = new_claim(
+        "Gửi tài liệu cho khách hàng.", "extractive", sources=[source],
+        owner="Mai", due_date="2026-11-20", confirmation_status="reviewed",
+    )
+    action["review_status"] = "confirmed"
+    content["domain"]["sections"] = {
+        "summary": [summary], "topics": [pending], "actions": [action],
+    }
+    version = MinutesStore(meetings).save_version(meeting_id, run_id, "extractive", content, "default")
+    saved = MinutesStore(meetings).read_version(meeting_id, version)["content"]
+    preview = render_minutes(saved)
+    assert "- Đã thống nhất thử nghiệm.\n" in preview
+    assert "- Đã thống nhất thử nghiệm. (" not in preview
+    assert "- Cần kiểm tra thêm. (Cần xem lại; Trích xuất từ phiên âm; đoạn 1" in preview
+    assert "- Gửi tài liệu cho khách hàng. — Người phụ trách: Mai · Hạn: 2026-11-20" in preview
+    assert saved["domain"]["sections"]["summary"][0]["sources"] == [source]
+    markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version)
+    assert preview in markdown
+    assert "- Đã thống nhất thử nghiệm. (" not in markdown

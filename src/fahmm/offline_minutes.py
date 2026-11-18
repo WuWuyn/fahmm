@@ -17,6 +17,8 @@ DOMAIN_SECTION_LIMIT = 100
 DECISION_WORDS = ("thống nhất", "quyết định", "đồng ý", "chốt", "nhất trí")
 ACTION_WORDS = ("cần thực hiện", "cần làm", "giao cho", "phụ trách", "sẽ làm", "sẽ gửi")
 QUESTION_WORDS = ("?", "chưa rõ", "cần làm rõ", "cần xác nhận")
+RISK_WORDS = ("rủi ro", "nguy cơ", "blocker", "bị chặn", "vướng mắc", "phụ thuộc")
+NEXT_STEP_WORDS = ("bước tiếp theo", "tiếp theo", "sau cuộc họp", "buổi sau", "sẽ tiếp tục")
 STOP_WORDS = {
     "và",
     "là",
@@ -74,6 +76,29 @@ def _topic_segments(segments: list[dict], limit: int = 5) -> list[dict]:
         selected.append(best)
         covered.update(tokenized[best])
     return [segments[index] for index in sorted(selected)]
+
+
+def _chronological_topics(segments: list[dict], limit: int = 12) -> list[dict]:
+    """Take representative excerpts across the complete recording, with a fixed output cap."""
+    if len(segments) <= limit:
+        chosen = segments
+    else:
+        start, end = segments[0]["start"], max(item["end"] for item in segments)
+        width = max((end - start) / limit, 0.001)
+        windows: list[list[dict]] = [[] for _ in range(limit)]
+        for segment in segments:
+            index = min(int((segment["start"] - start) / width), limit - 1)
+            windows[index].append(segment)
+        chosen = [candidate for window in windows if window
+                  for candidate in _topic_segments(window, 1)]
+    seen: set[str] = set()
+    result = []
+    for segment in chosen:
+        key = " ".join(segment["text"].casefold().split())
+        if key not in seen:
+            seen.add(key)
+            result.append(segment)
+    return result
 
 
 def extract_minutes(meeting: dict, run_id: str, segments: list[dict], topic_limit: int = 5) -> dict:
@@ -138,23 +163,37 @@ def extract_domain_minutes(
     usable.sort(key=lambda segment: (segment["start"], segment["id"]))
     content = new_domain_content(meeting_type, title=meeting.get("name"))
     sections = content["domain"]["sections"]
+    universal = meeting_type == "general"
+    seen_by_section: dict[str, set[str]] = {}
 
     def append(section: str, item: dict) -> None:
         entries = sections.setdefault(section, [])
-        if len(entries) < DOMAIN_SECTION_LIMIT:
+        key = " ".join(item["text"].casefold().split())
+        seen = seen_by_section.setdefault(section, set())
+        if key not in seen and len(entries) < (30 if universal else DOMAIN_SECTION_LIMIT):
+            seen.add(key)
             entries.append(item)
 
     def cite(segment: dict, **fields: object) -> dict:
         source = {**_reference(run_id, segment), "excerpt": segment["text"]}
         return new_claim(segment["text"].strip(), "extractive", sources=[source], **fields)
 
-    topics = _topic_segments(usable, topic_limit)
-    sections["summary"] = [cite(segment) for segment in topics[:3]]
+    topics = _chronological_topics(usable) if universal else _topic_segments(usable, topic_limit)
+    summary = ([topics[0], topics[len(topics) // 2], topics[-1]] if universal and len(topics) >= 3
+               else topics[:3])
+    sections["summary"] = [cite(segment) for segment in {item["id"]: item for item in summary}.values()]
     sections["topics"] = [cite(segment) for segment in topics]
     for segment in usable:
         lower = segment["text"].casefold()
         if any(word in lower for word in QUESTION_WORDS):
             append("open_questions", cite(segment))
+        if universal and any(word in lower for word in RISK_WORDS):
+            kind = "blocker" if any(word in lower for word in ("blocker", "bị chặn", "vướng mắc")) else "risk"
+            if "phụ thuộc" in lower:
+                kind = "dependency"
+            append("risks_blockers", cite(segment, kind=kind))
+        if universal and any(word in lower for word in NEXT_STEP_WORDS):
+            append("next_steps", cite(segment))
         if any(word in lower for word in ACTION_WORDS):
             append(
                 "actions",
@@ -177,12 +216,12 @@ def extract_domain_minutes(
         elif any(word in lower for word in ("đề xuất", "phương án", "alternative", "proposal")):
             append("proposed_solutions", cite(segment))
 
-        if meeting_type == "requirement_gathering" and any(
+        if meeting_type in ("general", "requirement_gathering") and any(
             word in lower for word in ("yêu cầu", "hệ thống phải", "cần có", "requirement")
         ):
             kind = "business_rule" if "quy tắc" in lower else "functional"
             append("requirements", cite(segment, kind=kind, formality="candidate"))
-        if meeting_type == "technical_discussion":
+        if meeting_type in ("general", "technical_discussion"):
             technical = {
                 "api_integration": ("api", "integration", "tích hợp"),
                 "database": ("database", "cơ sở dữ liệu"),
@@ -236,6 +275,11 @@ def extract_domain_minutes(
             )
             if kind:
                 append("uat_observations", cite(segment, kind=kind, acceptance_status="pending"))
+    if universal:
+        for section in ("summary", "topics", "requirements", "decisions", "proposed_solutions",
+                        "open_questions", "risks_blockers", "actions", "next_steps",
+                        "technical_considerations"):
+            sections.setdefault(section, [])
     return content
 
 

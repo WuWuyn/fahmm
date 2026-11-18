@@ -369,8 +369,20 @@ class BridgeApplication:
             }
         elif operation == "export.transcriptText":
             result = {"text": self.export.transcript_text(params["meetingId"], params["runId"])}
+        elif operation == "export.transcriptPlainText":
+            result = {"text": self.export.transcript_plain_text(params["meetingId"], params["runId"])}
+        elif operation == "export.audioInfo":
+            result = self.export.audio_info(params["meetingId"])
         elif operation == "export.writeMinutes":
             target = self.export.export_minutes(
+                params["meetingId"],
+                params["versionId"],
+                Path(params["nativePath"]),
+                overwrite=params["overwrite"],
+            )
+            result = {"saved": target is not None, "displayName": target.name if target else ""}
+        elif operation == "export.writeMinutesDocx":
+            target = self.export.export_minutes_docx(
                 params["meetingId"],
                 params["versionId"],
                 Path(params["nativePath"]),
@@ -383,6 +395,17 @@ class BridgeApplication:
                 params["runId"],
                 Path(params["nativePath"]),
                 overwrite=params["overwrite"],
+            )
+            result = {"saved": target is not None, "displayName": target.name if target else ""}
+        elif operation == "export.writeTranscriptPlain":
+            target = self.export.export_transcript_plain(
+                params["meetingId"], params["runId"], Path(params["nativePath"]),
+                overwrite=params["overwrite"],
+            )
+            result = {"saved": target is not None, "displayName": target.name if target else ""}
+        elif operation == "export.writeAudio":
+            target = self.export.export_audio(
+                params["meetingId"], Path(params["nativePath"]), overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "media.ticket":

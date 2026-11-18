@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Meetings } from "@/features/meetings/Meetings";
-import { bridgeCall, importAudio } from "@/shared/bridge/client";
+import { bridgeCall, demoAudioAvailable, importAudio, importDemoAudio } from "@/shared/bridge/client";
 
-vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), importAudio: vi.fn() }));
+vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), demoAudioAvailable: vi.fn(), importAudio: vi.fn(), importDemoAudio: vi.fn() }));
 vi.mock("@/features/meetings/AudioPlayer", () => ({ AudioPlayer: ({ meetingId, seekTo }: { meetingId: string; seekTo: { seconds: number } | null }) =>
   <div>Player {meetingId} {seekTo?.seconds ?? ""}</div> }));
 vi.mock("@/features/transcript/TranscriptPanel", () => ({ TranscriptPanel: ({ onSeek }: { onSeek: (seconds: number) => void }) =>
@@ -16,6 +16,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("opens an existing offline meeting, imports audio, and navigates to saved source without a path", async () => {
   const user = userEvent.setup();
+  vi.mocked(demoAudioAvailable).mockResolvedValue(false);
   const first = { id: "a".repeat(32), name: "Existing meeting", created_at: "2026-11-14T00:00:00Z",
     source_kind: "recorded", recording_state: "completed", processing_state: "completed", privacy_mode: "restricted" };
   const imported = { ...first, id: "b".repeat(32), name: "Imported audio", source_kind: "imported" };
@@ -47,4 +48,27 @@ it("opens an existing offline meeting, imports audio, and navigates to saved sou
   await waitFor(() => expect(screen.getByRole("tab", { name: "Transcript" }).getAttribute("aria-selected")).toBe("true"));
   expect(vi.mocked(bridgeCall).mock.calls.some(([op]) => op === "transcript.select")).toBe(true);
   expect(document.body.textContent).not.toContain("C:\\");
+});
+
+it("offers the local 60-minute sample and opens its imported meeting", async () => {
+  const user = userEvent.setup();
+  const sample = { id: "c".repeat(32), name: "Họp mẫu — Yêu cầu hệ thống bán hàng (60 phút)",
+    created_at: "2026-11-18T00:00:00Z", source_kind: "imported", recording_state: "completed",
+    processing_state: "not_started", privacy_mode: "restricted" };
+  let meetings: typeof sample[] = [];
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "meeting.list") return { meetings };
+    if (operation === "meeting.cleanupList") return { deletions: [], imports: [] };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  vi.mocked(demoAudioAvailable).mockResolvedValue(true);
+  vi.mocked(importDemoAudio).mockImplementation(async () => { meetings = [sample]; return { meetingId: sample.id }; });
+  render(<Meetings backendReady />);
+  expect(await screen.findByText("Sample meeting · 60 min")).toBeTruthy();
+  await user.type(screen.getByRole("textbox", { name: "Search meetings" }), "unrelated");
+  await user.click(screen.getByRole("button", { name: "Use sample recording" }));
+  await screen.findByText(sample.name, { selector: "h2" });
+  expect(screen.getByRole("textbox", { name: "Search meetings" })).toHaveProperty("value", "");
+  expect(screen.getByText(`Player ${sample.id}`)).toBeTruthy();
+  expect(vi.mocked(importDemoAudio)).toHaveBeenCalledOnce();
 });

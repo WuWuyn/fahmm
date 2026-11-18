@@ -4,6 +4,7 @@ pub mod media;
 
 use serde_json::{Value, json};
 use sidecar::{SidecarSupervisor, application_spec};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
@@ -18,8 +19,41 @@ fn call_backend(app: &tauri::AppHandle, operation: &str, params: Value) -> Resul
     backend.call(operation, params, Duration::from_secs(600))
 }
 
+fn demo_audio_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // Optional local fixture: keep the hour-long synthetic recording out of release bundles.
+    app.path().local_data_dir().map(|base| base.join("fahmm").join("demo")
+        .join("retail-requirements-60m.mp3"))
+        .map_err(|_| "DEMO_AUDIO_UNAVAILABLE".to_string())
+}
+
+#[tauri::command]
+fn bridge_demo_status(app: tauri::AppHandle) -> Result<Value, String> {
+    let path = demo_audio_path(&app)?;
+    let available = path.metadata().is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0);
+    Ok(json!({"available": available}))
+}
+
+#[tauri::command]
+async fn bridge_import_demo(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = demo_audio_path(&app)?;
+        if !path.metadata().is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0) {
+            return Err("DEMO_AUDIO_UNAVAILABLE".into());
+        }
+        let path = path.to_str().ok_or("DEMO_AUDIO_UNAVAILABLE")?;
+        let result = call_backend(&app, "meeting.import", json!({"nativePath": path}))?;
+        if let Some(meeting_id) = result["meetingId"].as_str() {
+            let _ = call_backend(&app, "meeting.rename", json!({
+                "meetingId": meeting_id,
+                "name": "Họp mẫu — Yêu cầu hệ thống bán hàng (60 phút)"
+            }));
+        }
+        Ok(result)
+    }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
+}
+
 fn webview_operation_allowed(operation: &str) -> bool {
-    !matches!(operation, "meeting.import" | "export.writeMinutes" | "export.writeTranscript" | "media.resolve")
+    !matches!(operation, "meeting.import" | "export.writeMinutes" | "export.writeMinutesDocx" | "export.writeTranscript" | "export.writeTranscriptPlain" | "export.writeAudio" | "media.resolve")
 }
 
 #[tauri::command]
@@ -39,7 +73,10 @@ mod host_tests {
     fn paths_require_native_dialog_commands() {
         assert!(!webview_operation_allowed("meeting.import"));
         assert!(!webview_operation_allowed("export.writeMinutes"));
+        assert!(!webview_operation_allowed("export.writeMinutesDocx"));
         assert!(!webview_operation_allowed("export.writeTranscript"));
+        assert!(!webview_operation_allowed("export.writeTranscriptPlain"));
+        assert!(!webview_operation_allowed("export.writeAudio"));
         assert!(!webview_operation_allowed("media.resolve"));
         assert!(webview_operation_allowed("meeting.list"));
     }
@@ -64,11 +101,14 @@ async fn bridge_export(app: tauri::AppHandle, meeting_id: String, document_id: S
     tauri::async_runtime::spawn_blocking(move || {
         let (operation, id_key, file_name, extension) = match document_kind.as_str() {
             "minutes" => ("export.writeMinutes", "versionId", "minutes.md", "md"),
+            "minutesWord" => ("export.writeMinutesDocx", "versionId", "minutes.docx", "docx"),
             "transcript" => ("export.writeTranscript", "runId", "transcript.txt", "txt"),
+            "transcriptPlain" => ("export.writeTranscriptPlain", "runId", "transcript.txt", "txt"),
             _ => return Err("INVALID_REQUEST".into()),
         };
+        let filter_name = if document_kind == "minutesWord" { "Word document" } else { "Text document" };
         let selection = app.dialog().file().set_file_name(file_name)
-            .add_filter("Text document", &[extension]).blocking_save_file();
+            .add_filter(filter_name, &[extension]).blocking_save_file();
         let Some(selection) = selection else { return Ok(json!({"cancelled": true})) };
         let path = selection.into_path().map_err(|_| "INVALID_REQUEST")?;
         let overwrite = if path.exists() {
@@ -81,6 +121,32 @@ async fn bridge_export(app: tauri::AppHandle, meeting_id: String, document_id: S
         let mut params = json!({"meetingId": meeting_id, "nativePath": path, "overwrite": overwrite});
         params[id_key] = json!(document_id);
         call_backend(&app, operation, params)
+    }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
+}
+
+#[tauri::command]
+async fn bridge_export_audio(app: tauri::AppHandle, meeting_id: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let info = call_backend(&app, "export.audioInfo", json!({"meetingId": meeting_id}))?;
+        let extension = info["extension"].as_str().ok_or("INVALID_REQUEST")?;
+        if !matches!(extension, "wav" | "mp3" | "m4a" | "flac") {
+            return Err("INVALID_REQUEST".into());
+        }
+        let file_name = info["fileName"].as_str().ok_or("INVALID_REQUEST")?;
+        let selection = app.dialog().file().set_file_name(file_name)
+            .add_filter("Audio recording", &[extension]).blocking_save_file();
+        let Some(selection) = selection else { return Ok(json!({"cancelled": true})) };
+        let path = selection.into_path().map_err(|_| "INVALID_REQUEST")?;
+        let overwrite = if path.exists() {
+            app.dialog().message("Replace the existing export file?")
+                .title("Confirm overwrite").buttons(MessageDialogButtons::OkCancel)
+                .blocking_show()
+        } else { false };
+        if path.exists() && !overwrite { return Ok(json!({"cancelled": true})) }
+        let path = path.to_str().ok_or("INVALID_REQUEST")?;
+        call_backend(&app, "export.writeAudio", json!({
+            "meetingId": meeting_id, "nativePath": path, "overwrite": overwrite,
+        }))
     }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
 }
 
@@ -121,7 +187,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(BackendState(Mutex::new(backend)))
         .invoke_handler(tauri::generate_handler![bridge_status, bridge_restart,
-            bridge_call, bridge_import, bridge_export])
+            bridge_call, bridge_import, bridge_demo_status, bridge_import_demo, bridge_export,
+            bridge_export_audio])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

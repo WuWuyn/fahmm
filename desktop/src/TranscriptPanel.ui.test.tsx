@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TranscriptPanel } from "@/features/transcript/TranscriptPanel";
-import { bridgeCall, exportSaved } from "@/shared/bridge/client";
+import { bridgeCall, exportAudio, exportSaved } from "@/shared/bridge/client";
 
-vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportSaved: vi.fn() }));
+vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportAudio: vi.fn(), exportSaved: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("starts at the selected playhead or defaults to the beginning of the selected meeting", async () => {
@@ -104,12 +104,27 @@ it("does not export unsaved transcript text and treats a native dialog cancel as
   render(<TranscriptPanel meetingId={"a".repeat(32)} onSeek={() => {}} onRunChange={() => {}} />);
   await screen.findByRole("textbox", { name: "Transcript segment 1" });
   await user.type(screen.getByRole("textbox", { name: "Transcript segment 1" }), " unsaved");
-  await user.click(screen.getByRole("button", { name: "Export TXT" }));
+  await user.click(screen.getByRole("button", { name: "Export plain TXT" }));
   expect(vi.mocked(exportSaved)).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);
-  await user.click(screen.getByRole("button", { name: "Export TXT" }));
-  await waitFor(() => expect(vi.mocked(exportSaved)).toHaveBeenCalledWith("a".repeat(32), runId, "transcript"));
+  await user.click(screen.getByRole("button", { name: "Export plain TXT" }));
+  await waitFor(() => expect(vi.mocked(exportSaved)).toHaveBeenCalledWith("a".repeat(32), runId, "transcriptPlain"));
   expect(screen.queryByText(/Exported transcript/)).toBeNull();
   expect(screen.queryByText("Unsaved edits")).toBeNull();
   confirm.mockRestore();
+});
+
+it("exports recording audio even when no transcript exists", async () => {
+  const user = userEvent.setup();
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "transcript.list") return { runs: [], activeRunId: null };
+    if (operation === "model.catalog") return { selectedId: null };
+    if (operation === "asr.status") return { state: "idle", meetingId: null, runId: null, progress: null, segmentCount: 0, error: null };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  vi.mocked(exportAudio).mockResolvedValue({ saved: true, displayName: "recording.wav" });
+  render(<TranscriptPanel meetingId={"a".repeat(32)} onSeek={() => {}} onRunChange={() => {}} />);
+  await user.click(await screen.findByRole("button", { name: "Export audio" }));
+  expect(vi.mocked(exportAudio)).toHaveBeenCalledWith("a".repeat(32));
+  expect(await screen.findByText("Exported recording.wav.")).toBeTruthy();
 });

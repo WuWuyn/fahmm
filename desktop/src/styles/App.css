@@ -194,8 +194,6 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .markdown-body p, .markdown-body li { font-size: 12px; }
 .markdown-body ul { padding-left: 20px; list-style: disc; }
 .minutes-editor { min-height: 320px; }
-.citation-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
-.citation-list strong { font-size: 11px; margin-right: 5px; }
 .domain-review { margin: 18px 0; }
 .domain-review > .hint { font-size: 13px; line-height: 1.6; letter-spacing: .005em; }
 .domain-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 22px 24px; margin: 24px 0 28px; }
@@ -203,11 +201,22 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .domain-metadata label { display: block; font-size: 13px; font-weight: 650; line-height: 1.45; letter-spacing: .01em; }
 .domain-metadata input { width: 100%; min-height: 44px; padding-inline: 13px; font-size: 14px; line-height: 1.5; letter-spacing: .005em; }
 .domain-metadata small { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; letter-spacing: .005em; }
+.domain-bulk-review { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 12px; }
+.domain-bulk-review span { color: var(--muted); font-size: 12px; }
 .domain-claim label { display: grid; gap: 6px; font-size: 12px; }
 .domain-claim small { color: var(--muted); }
-.domain-section { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 18px; }
-.domain-section .document-toolbar.secondary { justify-content: space-between; margin: 12px 0; }
-.domain-section h3 { font-size: 14px; font-weight: 700; }
+.domain-section { border-top: 1px solid var(--border); }
+.domain-section .document-toolbar.secondary { justify-content: space-between; flex-wrap: nowrap; min-height: 48px; margin: 0; }
+.domain-section h3 { min-width: 0; flex: 1; margin: 0; font-size: 14px; font-weight: 700; }
+.domain-section .document-toolbar.secondary > [data-slot="button"] { flex-shrink: 0; }
+.domain-section-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 42px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.domain-section-toggle:hover { color: var(--accent); }
+.domain-section-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.domain-section-toggle svg { flex: none; transition: transform 150ms ease-out; }
+.domain-section-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.domain-section-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.domain-section-count { flex: none; color: var(--muted); font-size: 11px; font-weight: 600; }
+.domain-section-body { padding: 4px 0 10px; }
 .domain-claim { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; }
 .domain-claim-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 7px; }
 .domain-claim-heading label { font-size: 12px; font-weight: 650; }
@@ -227,6 +236,9 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .minutes-create-copy { min-width: 200px; }
 .minutes-create-copy h3 { margin: 0; font-size: 14px; font-weight: 680; }
 .minutes-create-copy p { margin-top: 4px; font-size: 12px; }
+.minutes-create-notice { margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
+.minutes-create-notice.info { color: var(--muted); }
+.minutes-create-notice.error { color: var(--danger); }
 .minutes-create-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
 .minutes-type-field { display: grid; gap: 7px; }
 .minutes-type-field label, .minutes-version-control label { font-size: 12px; font-weight: 650; }
@@ -341,6 +353,11 @@ p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
 .meeting-list-header .count-badge { color: var(--text); font-size: 15px; }
 .meeting-import { width: calc(100% - 22px); margin: 0 11px 13px; min-height: 46px; border-color: var(--accent); color: var(--accent); font-size: 14px; }
 .meeting-import:hover:not(:disabled) { background: var(--accent-strong); }
+.meeting-demo { margin: 0 11px 16px; padding: 12px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.meeting-demo strong { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 13px; font-weight: 620; }
+.meeting-demo strong svg { flex: none; color: var(--accent); }
+.meeting-demo p { margin: 7px 0 11px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.meeting-demo [data-slot="button"] { width: 100%; min-height: 34px; }
 .meeting-search { position: relative; margin: 0 11px 21px; }
 .meeting-search svg { position: absolute; z-index: 1; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .meeting-search [data-slot="input"] { height: 44px; width: 100%; padding-left: 42px; border-color: var(--border); background: color-mix(in srgb, var(--surface) 65%, transparent); font-size: 13px; }
