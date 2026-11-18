@@ -1,0 +1,14 @@
+[
+  {"id": 1, "start": 0, "end": 20, "text": "Mở đầu cuộc họp thu thập yêu cầu cho siêu thị Bình Minh."},
+  {"id": 2, "start": 240, "end": 260, "text": "Quầy bán lẻ cần có chức năng quét mã vạch và in hóa đơn."},
+  {"id": 3, "start": 540, "end": 560, "text": "Cần làm rõ cách xử lý hàng trả lại?"},
+  {"id": 4, "start": 840, "end": 860, "text": "Đề xuất dùng API v2 để đồng bộ tồn kho, chưa thống nhất."},
+  {"id": 5, "start": 1140, "end": 1160, "text": "Rủi ro là mạng cửa hàng thường gián đoạn."},
+  {"id": 6, "start": 1440, "end": 1460, "text": "Khách hàng yêu cầu báo cáo doanh thu theo từng ca."},
+  {"id": 7, "start": 1740, "end": 1760, "text": "Thảo luận database cho lịch sử giao dịch."},
+  {"id": 8, "start": 2040, "end": 2060, "text": "Thống nhất bản thử nghiệm chỉ có thanh toán tiền mặt."},
+  {"id": 9, "start": 2340, "end": 2360, "text": "Cần làm bản mẫu màn hình cho thu ngân."},
+  {"id": 10, "start": 2640, "end": 2660, "text": "Phụ thuộc vào danh mục hàng hóa do siêu thị cung cấp."},
+  {"id": 11, "start": 2940, "end": 2960, "text": "Bước tiếp theo là kiểm tra bản mẫu với nhân viên quầy."},
+  {"id": 12, "start": 3540, "end": 3560, "text": "Cuối cuộc họp cần xác nhận số lượng máy POS."}
+]

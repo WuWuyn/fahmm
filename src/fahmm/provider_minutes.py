@@ -6,6 +6,7 @@ import copy
 import json
 
 from fahmm.cloud_minutes import CloudRequestSnapshot
+from fahmm.minutes_domain import SECTION_KINDS, new_claim, new_domain_content
 from fahmm.minutes_store import DEFAULT_TEMPLATE
 from fahmm.offline_minutes import ACTION_WORDS, DECISION_WORDS, UNKNOWN
 
@@ -139,3 +140,115 @@ class _ReferencedSegment:
         self.start = segment.start
         self.end = segment.end
         self.text = segment.text
+
+
+def normalize_domain_provider_minutes(
+    raw: object, snapshot: CloudRequestSnapshot, meeting: dict, meeting_type: str
+) -> dict:
+    """Treat provider prose and citations as untrusted draft suggestions."""
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = {"summary": [{"text": raw}]}
+    elif isinstance(raw, dict):
+        parsed = raw
+    else:
+        raise TypeError("Provider returned an unsupported minutes response")
+    if not isinstance(parsed, dict):
+        raise TypeError("Provider returned an unsupported minutes response")
+    content = new_domain_content(meeting_type, title=meeting.get("name"))
+    sections = content["domain"]["sections"]
+    supplied = parsed.get("sections", parsed)
+    if not isinstance(supplied, dict):
+        raise TypeError("Invalid provider minutes sections")
+    selected = {segment.id: segment for segment in snapshot.segments}
+    allowed = {
+        "summary",
+        "topics",
+        "requirements",
+        "decisions",
+        "proposed_solutions",
+        "open_questions",
+        "risks_blockers",
+        "actions",
+        "next_steps",
+        "technical_considerations",
+        "status_updates",
+        "incident_findings",
+        "uat_observations",
+    }
+    material = {"requirements", "decisions", "actions", "incident_findings", "uat_observations"}
+    for section in allowed:
+        entries = supplied.get(section, [])
+        if isinstance(entries, str):
+            entries = [{"text": entries}]
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            item = {"text": entry} if isinstance(entry, str) else entry
+            if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+                continue
+            text = item["text"].strip()
+            ids = _source_ids(item)
+            if not text or not ids or any(segment_id not in selected for segment_id in ids):
+                continue
+            cited = " ".join(selected[segment_id].text for segment_id in ids)
+            if section in material and text.casefold() not in cited.casefold():
+                continue
+            if section == "decisions" and (
+                not any(word in cited.casefold() for word in DECISION_WORDS)
+                or any(
+                    word in cited.casefold()
+                    for word in (
+                        "chưa thống nhất",
+                        "không thống nhất",
+                        "chưa quyết định",
+                        "đề xuất",
+                        "phương án",
+                    )
+                )
+            ):
+                continue
+            sources = [
+                {
+                    "run_id": snapshot.run_id,
+                    "segment_id": segment_id,
+                    "start": selected[segment_id].start,
+                    "end": selected[segment_id].end,
+                    "excerpt": selected[segment_id].text,
+                }
+                for segment_id in ids
+            ]
+            fields = {}
+            if section in SECTION_KINDS:
+                kind = item.get("kind")
+                if not isinstance(kind, str) or kind not in SECTION_KINDS[section]:
+                    continue
+                if section == "incident_findings" and kind == "confirmed_cause":
+                    kind = "suspected_cause"
+                if section == "uat_observations" and kind == "acceptance":
+                    kind = "pending_confirmation"
+                fields["kind"] = kind
+            if section == "requirements":
+                fields["formality"] = "candidate"
+            if section == "actions":
+                fields.update(
+                    owner=_verified_substring(item.get("owner"), cited),
+                    due_date=_verified_substring(item.get("due_date"), cited),
+                    confirmation_status="suggested",
+                )
+            if section == "uat_observations":
+                fields["acceptance_status"] = "pending"
+            sections.setdefault(section, []).append(
+                new_claim(text, "provider", sources=sources, **fields)
+            )
+    return content
+
+
+def _verified_substring(value: object, cited: str) -> str:
+    return (
+        value.strip()
+        if isinstance(value, str) and value.strip() and value.casefold() in cited.casefold()
+        else UNKNOWN
+    )

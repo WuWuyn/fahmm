@@ -28,13 +28,13 @@ fn fields_match(value: Option<&Value>, fields: &Value) -> bool {
         return false;
     };
     fields.as_object().is_some_and(|expected| {
-        expected.iter().all(|(name, kind)| {
+        object.keys().all(|name| expected.contains_key(name)) && expected.iter().all(|(name, kind)| {
             let item = object.get(name);
             match kind.as_str().unwrap_or("") {
                 "string" => item.and_then(Value::as_str).is_some(),
-                "string?" => item.is_some_and(|part| part.is_null() || part.is_string()),
+                "string?" => item.is_none_or(|part| part.is_null() || part.is_string()),
                 "number" => item.and_then(Value::as_f64).is_some(),
-                "number?" => item.is_some_and(|part| part.is_null() || part.as_f64().is_some()),
+                "number?" => item.is_none_or(|part| part.is_null() || part.as_f64().is_some()),
                 "integer" => item.and_then(Value::as_i64).is_some(),
                 "boolean" => item.and_then(Value::as_bool).is_some(),
                 "string[]" => item.and_then(Value::as_array).is_some_and(|items| {
@@ -47,7 +47,7 @@ fn fields_match(value: Option<&Value>, fields: &Value) -> bool {
                     items.iter().all(|item| item.as_f64().is_some())
                 }),
                 "object" => item.and_then(Value::as_object).is_some(),
-                "object?" => item.is_some_and(|part| part.is_null() || part.is_object()),
+                "object?" => item.is_none_or(|part| part.is_null() || part.is_object()),
                 "object[]" => item.and_then(Value::as_array).is_some_and(|items| {
                     items.iter().all(Value::is_object)
                 }),

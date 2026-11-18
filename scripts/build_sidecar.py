@@ -22,12 +22,9 @@ def build() -> Path:
     BUILD.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     command = [
-        "uv",
-        "run",
-        "--locked",
-        "--group",
-        "build",
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         "--clean",
         "--onefile",

@@ -196,22 +196,36 @@ class CloudMinutesService:
         self,
         snapshot: CloudRequestSnapshot,
         authorization: DisclosureAuthorization | None,
+        *,
+        meeting_type: str | None = None,
     ) -> str:
+        if meeting_type is not None:
+            from fahmm.minutes_domain import MEETING_TYPES
+
+            if not isinstance(meeting_type, str) or meeting_type not in MEETING_TYPES:
+                raise ValueError("Invalid meeting type")
         with self.meetings.activity(snapshot.meeting_id, "provider_generation"):
-            return self._generate(snapshot, authorization)
+            return self._generate(snapshot, authorization, meeting_type)
 
     def _generate(
         self,
         snapshot: CloudRequestSnapshot,
         authorization: DisclosureAuthorization | None,
+        meeting_type: str | None,
     ) -> str:
-        from fahmm.provider_minutes import normalize_provider_minutes
+        from fahmm.provider_minutes import (
+            normalize_domain_provider_minutes,
+            normalize_provider_minutes,
+        )
         from fahmm.provider_transport import ProviderError
 
         raw = self.send(snapshot, authorization)
         try:
-            content = normalize_provider_minutes(
-                raw, snapshot, self.meetings.metadata(snapshot.meeting_id)
+            meeting = self.meetings.metadata(snapshot.meeting_id)
+            content = (
+                normalize_provider_minutes(raw, snapshot, meeting)
+                if meeting_type is None
+                else normalize_domain_provider_minutes(raw, snapshot, meeting, meeting_type)
             )
         except (TypeError, ValueError):
             raise ProviderError(

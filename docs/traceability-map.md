@@ -25,3 +25,33 @@ Engineering review: Codex, 15 November 2026 (Asia/Bangkok). The Flow 1/2 review 
 ## Review rule
 
 For each change, identify affected rows and rerun the matching service, bridge, frontend and Rust checks on the new code commit. Capture a separate gate record with environment and reviewer. Controlled fixtures cannot establish audible live recording, speech quality across accents or clean-machine packaging. The `source-linked-action-items` and `local-project-workspaces-search` changes are plans, not shipped features.
+
+## One-click meeting minutes implementation — 18 November 2026
+
+OpenSpec owner: `one-click-meeting-minutes`. The primary desktop action now generates a universal, unverified, source-linked draft from the active saved transcript using `meetingType=general`. The offline extractor covers chronological windows across a long recording, classifies only explicit cues, keeps empty universal sections visible, and leaves absent meeting facts unknown. Advanced specialized types and the separately authorized provider workflow remain available. See `docs/one-click-meeting-minutes.md` for the user journey.
+
+| Check | Observed result | Boundary |
+| --- | --- | --- |
+| OpenSpec strict validation | `one-click-meeting-minutes` valid | Spec consistency only |
+| Python focused service/store/export/bridge/provider tests | 96 passed; one-hour fixture and bridge-to-export smoke passed | Synthetic transcript, not ASR accuracy |
+| Complete Python suite with loopback and Windows Credential Manager access | 215 passed, 4 skipped | Six sandbox-only failures cleared on rerun with those local OS capabilities |
+| Desktop React tests | 44 passed across 9 files after the sidecar compatibility fix | Simulated bridge/UI state |
+| Desktop TypeScript/Vite build; Rust `cargo check`; Rust `cargo test` | All passed; 9 Rust tests passed | Does not establish packaged Windows 10/11 release acceptance |
+| Ruff on changed Python files | Passed | Static check only |
+
+The 60-minute fixture is timestamped text, not recorded speech. A permitted real Vietnamese meeting, transcript accuracy, source-audio review, audio capture reliability, and clean-machine packaging still require the Flow 1/2 manual gates. The local one-click draft is extractive and is not a semantic AI summary; FR-26 remains future scope. No merge, push, or deployment was performed for this change.
+
+| Feature gate | Status and evidence |
+| --- | --- |
+| G0 — inspection | Complete: current domain model, transcript versions, minutes store, exporter, bridge, provider boundary, desktop panel, and related OpenSpec changes were inspected. |
+| G1 — OpenSpec | Complete: proposal, design, delta spec, and 7/7 tasks; strict validation passed. |
+| G2 — domain/backend | Complete for the offline extractive path: universal sections, citations, chronological coverage, storage and export verified by the focused Python tests. Semantic local LLM generation is not implemented. |
+| G3 — desktop UI | Complete in automated UI checks: one-click action, progress, missing transcript, retry, unsaved-edit guard, version selection, and bilingual labels. |
+| G4 — automated checks | Complete: full Python, React, TypeScript/Vite, Ruff, Rust check and Rust tests passed in the noted environment. |
+| G5 — integrated smoke | Bridge-to-saved-export smoke passed with a synthetic transcript including a corrected working segment. Real desktop/audio end-to-end acceptance remains unverified. |
+
+## Desktop sidecar compatibility regression — 18 November 2026
+
+The Tauri release executable had been rebuilt with current React code while its adjacent frozen Python sidecar was still from an older build. The older sidecar did not advertise `minutes.sourceDrift`. Minutes generation could save a version, but the desktop's version-opening request failed, and its feedback was below the long document. The local meeting library retained the generated versions; this fix does not delete or merge them.
+
+The sidecar was rebuilt from current Python code. A frozen-sidecar smoke test with a temporary Vietnamese transcript passed generation, readback, rendered body, source-drift check, Markdown export, and active-version listing. Tauri now checks that the sidecar advertises every operation in `desktop/protocol/contract.json` before a release build. The desktop shows generation and opening failures beside the action and blocks approval when source checks are unavailable. The new release was built in a separate target directory while the prior app held its sidecar file open. Live verification in the user's still-open desktop remains pending until that app is closed and the new executable is launched.

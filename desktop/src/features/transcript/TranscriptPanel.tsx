@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CirclePlay, Copy, Download, Info, Save, Settings2, WandSparkles, X } from "lucide-react";
-import { bridgeCall, exportSaved } from "@/shared/bridge/client";
+import { bridgeCall, exportAudio, exportSaved } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -134,14 +134,22 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
     setMessage("");
     try {
       if (copy) {
-        const saved = await bridgeCall<{ text: string }>("export.transcriptText", { meetingId, runId: selectedRun });
+        const saved = await bridgeCall<{ text: string }>("export.transcriptPlainText", { meetingId, runId: selectedRun });
         await navigator.clipboard.writeText(saved.text);
         setMessage("Saved transcript copied.");
       } else {
-        const result = await exportSaved(meetingId, selectedRun, "transcript");
+        const result = await exportSaved(meetingId, selectedRun, "transcriptPlain");
         if (result.saved) { setMessageName(result.displayName ?? ""); setMessage("Exported {name}."); }
       }
     } catch { setMessage("Could not export the saved transcript."); }
+  }
+
+  async function saveAudio() {
+    setMessage("");
+    try {
+      const result = await exportAudio(meetingId);
+      if (result.saved) { setMessageName(result.displayName ?? ""); setMessage("Exported {name}."); }
+    } catch { setMessage("Could not export audio. Finish or recover the recording and try again."); }
   }
 
   const activeJob = status?.meetingId === meetingId && ["loading", "running", "cancelling"].includes(status.state);
@@ -202,7 +210,8 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
     {working.length > 0 && <p className="transcript-note"><Info size={17} />{t("Select a timestamp to play the matching audio.")}</p>}
     <div className="document-footer"><Button size="sm" disabled={!dirty || busy} onClick={() => void save()}><Save size={15} /> {t("Save edits")}</Button>
       <Button variant="secondary" size="sm" disabled={!selectedRun} onClick={() => void exportText(true)}><Copy size={15} /> {t("Copy saved")}</Button>
-      <Button variant="secondary" size="sm" disabled={!selectedRun} onClick={() => void exportText(false)}><Download size={15} /> {t("Export TXT")}</Button>
+      <Button variant="secondary" size="sm" disabled={!selectedRun} onClick={() => void exportText(false)}><Download size={15} /> {t("Export plain TXT")}</Button>
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void saveAudio()}><Download size={15} /> {t("Export audio")}</Button>
       {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}</div>
     {message && <p className="feedback" role="status">{t(message, { name: messageName })}</p>}
   </section>;

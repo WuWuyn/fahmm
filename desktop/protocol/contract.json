@@ -111,6 +111,18 @@
       "params": { "meetingId": "string", "versionId": "string", "content": "object" },
       "result": { "versionId": "string" }
     },
+    "minutes.editDomain": {
+      "params": { "meetingId": "string", "versionId": "string", "content": "object" },
+      "result": { "versionId": "string" }
+    },
+    "minutes.setType": {
+      "params": { "meetingId": "string", "versionId": "string", "meetingType": "string" },
+      "result": { "versionId": "string" }
+    },
+    "minutes.sourceDrift": {
+      "params": { "meetingId": "string", "versionId": "string" },
+      "result": { "sources": "object[]" }
+    },
     "minutes.select": {
       "params": { "meetingId": "string", "versionId": "string" },
       "result": { "activeVersionId": "string" }
@@ -168,7 +180,7 @@
       "result": { "state": "string", "meetingId": "string?", "runId": "string?", "progress": "number?", "segmentCount": "integer", "error": "string?" }
     },
     "minutes.generateOffline": {
-      "params": { "meetingId": "string", "runId": "string?" },
+      "params": { "meetingId": "string", "runId": "string?", "meetingType": "string?" },
       "result": { "versionId": "string" }
     },
     "cloud.preview": {
@@ -184,7 +196,7 @@
       "result": { "confirmed": "boolean" }
     },
     "cloud.send": {
-      "params": { "previewId": "string" },
+      "params": { "previewId": "string", "meetingType": "string?" },
       "result": { "versionId": "string" }
     },
     "provider.list": {
@@ -207,12 +219,32 @@
       "params": { "meetingId": "string", "runId": "string" },
       "result": { "text": "string" }
     },
+    "export.transcriptPlainText": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "text": "string" }
+    },
+    "export.audioInfo": {
+      "params": { "meetingId": "string" },
+      "result": { "fileName": "string", "extension": "string" }
+    },
     "export.writeMinutes": {
+      "params": { "meetingId": "string", "versionId": "string", "nativePath": "string", "overwrite": "boolean" },
+      "result": { "saved": "boolean", "displayName": "string" }
+    },
+    "export.writeMinutesDocx": {
       "params": { "meetingId": "string", "versionId": "string", "nativePath": "string", "overwrite": "boolean" },
       "result": { "saved": "boolean", "displayName": "string" }
     },
     "export.writeTranscript": {
       "params": { "meetingId": "string", "runId": "string", "nativePath": "string", "overwrite": "boolean" },
+      "result": { "saved": "boolean", "displayName": "string" }
+    },
+    "export.writeTranscriptPlain": {
+      "params": { "meetingId": "string", "runId": "string", "nativePath": "string", "overwrite": "boolean" },
+      "result": { "saved": "boolean", "displayName": "string" }
+    },
+    "export.writeAudio": {
+      "params": { "meetingId": "string", "nativePath": "string", "overwrite": "boolean" },
       "result": { "saved": "boolean", "displayName": "string" }
     },
     "media.ticket": {

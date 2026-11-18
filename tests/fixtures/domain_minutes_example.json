@@ -1,0 +1,24 @@
+{
+  "domain_schema_version": 1,
+  "domain": {
+    "meeting_type": "general",
+    "metadata": {
+      "title": {"value": "Customer discussion", "provenance": "user_provided", "sources": []},
+      "meeting_datetime": {"value": null, "provenance": "unknown", "sources": []},
+      "project_customer": {"value": null, "provenance": "unknown", "sources": []},
+      "participants": {"value": [], "provenance": "unknown", "sources": []},
+      "objective": {"value": null, "provenance": "unknown", "sources": []}
+    },
+    "sections": {
+      "topics": [
+        {
+          "item_id": "11111111111111111111111111111111",
+          "text": "Cần kiểm tra API.",
+          "sources": [{"run_id": "00000000000000000000000000000000", "segment_id": 1, "start": 0.0, "end": 3.0, "excerpt": "Cần kiểm tra API."}],
+          "origin": "extractive",
+          "review_status": "needs_review"
+        }
+      ]
+    }
+  }
+}

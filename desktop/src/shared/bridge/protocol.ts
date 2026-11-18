@@ -20,20 +20,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function fieldsMatch(value: unknown, fields: Record<string, string>): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
+  if (Object.keys(value).some((key) => !Object.prototype.hasOwnProperty.call(fields, key))) return false;
   return Object.entries(fields).every(([name, type]) => {
     const item = value[name];
     switch (type) {
       case "string": return typeof item === "string";
-      case "string?": return item === null || typeof item === "string";
+      case "string?": return item === undefined || item === null || typeof item === "string";
       case "number": return typeof item === "number" && Number.isFinite(item);
-      case "number?": return item === null || (typeof item === "number" && Number.isFinite(item));
+      case "number?": return item === undefined || item === null || (typeof item === "number" && Number.isFinite(item));
       case "integer": return Number.isInteger(item);
       case "boolean": return typeof item === "boolean";
       case "string[]": return Array.isArray(item) && item.every((part) => typeof part === "string");
       case "integer[]": return Array.isArray(item) && item.every((part) => Number.isInteger(part));
       case "number[]": return Array.isArray(item) && item.every((part) => typeof part === "number" && Number.isFinite(part));
       case "object": return isRecord(item);
-      case "object?": return item === null || isRecord(item);
+      case "object?": return item === undefined || item === null || isRecord(item);
       case "object[]": return Array.isArray(item) && item.every(isRecord);
       default: return false;
     }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "verify:sidecar": "node scripts/verify-sidecar-contract.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"

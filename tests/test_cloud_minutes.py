@@ -158,3 +158,14 @@ def test_meeting_metadata_remains_readable_during_send_and_mode_change_is_reject
         thread.join(timeout=5)
     assert result == ["ok"]
     service.meetings.set_privacy_mode(meeting_id, "restricted")
+
+
+def test_invalid_domain_type_is_rejected_before_provider_send(tmp_path):
+    service, meeting_id, profile_id, _, _ = make_cloud_service(tmp_path)
+    sent = []
+    service._transport = lambda *_args: sent.append(True) or "ok"
+    snapshot = service.prepare(meeting_id, profile_id, {2}, {2})
+    authorization = service.confirm(snapshot, True)
+    with pytest.raises(ValueError, match="meeting type"):
+        service.generate(snapshot, authorization, meeting_type="unknown")
+    assert sent == []

@@ -8,7 +8,7 @@ import { useUIStore } from "@/shared/uiStore";
 
 vi.mock("@/shared/bridge/client", () => ({
   bridgeCall: vi.fn(), bridgeStatus: vi.fn(), restartBridge: vi.fn(),
-  importAudio: vi.fn(), exportSaved: vi.fn(),
+  importAudio: vi.fn(), exportSaved: vi.fn(), exportAudio: vi.fn(),
 }));
 
 let recordingState = "idle";

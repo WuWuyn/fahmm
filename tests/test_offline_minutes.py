@@ -1,10 +1,19 @@
+import copy
+import json
 import socket
+import time
+from pathlib import Path
 
 import pytest
 from test_minutes_store import make_meeting_with_run
 
 from fahmm.minutes_store import MinutesStore
-from fahmm.offline_minutes import UNKNOWN, OfflineMinutesService, extract_minutes
+from fahmm.offline_minutes import (
+    UNKNOWN,
+    OfflineMinutesService,
+    extract_domain_minutes,
+    extract_minutes,
+)
 from fahmm.transcripts import TranscriptStore
 
 
@@ -76,3 +85,169 @@ def test_template_regeneration_is_offline_and_preserves_approved_version(tmp_pat
     assert "sửa bản nháp" in new_content["decisions"][0]["text"]
     assert minutes.read_version(meeting_id, first) == approved
     assert minutes.read_version(meeting_id, second)["manifest"]["review_state"] == "unverified"
+
+
+@pytest.mark.parametrize(
+    ("meeting_type", "text", "section", "kind"),
+    [
+        ("requirement_gathering", "Khách hàng yêu cầu API xuất CSV.", "requirements", "functional"),
+        (
+            "technical_discussion",
+            "Cân nhắc tích hợp API v2.",
+            "technical_considerations",
+            "api_integration",
+        ),
+        ("project_status", "Mốc milestone chưa hoàn thành.", "status_updates", "milestone"),
+        (
+            "issue_incident",
+            "Nghi do database timeout gây lỗi.",
+            "incident_findings",
+            "suspected_cause",
+        ),
+        ("uat_feedback", "UAT scenario 1 failed.", "uat_observations", "defect"),
+    ],
+)
+def test_domain_offline_candidates_are_cited_and_unverified(meeting_type, text, section, kind):
+    content = extract_domain_minutes(
+        {"name": "Client A", "created_at": "2026-11-17T09:00:00+07:00"},
+        "a" * 32,
+        [{"id": 1, "start": 0.0, "end": 2.0, "text": text}],
+        meeting_type,
+    )
+    domain = content["domain"]
+    assert domain["metadata"]["meeting_datetime"]["value"] is None
+    item = domain["sections"][section][0]
+    assert item["text"] == text
+    assert item["kind"] == kind
+    assert item["sources"][0]["excerpt"] == text
+    assert item["review_status"] == "needs_review"
+    assert item["origin"] == "extractive"
+
+
+def test_domain_alternatives_do_not_become_decisions_and_cause_is_not_confirmed():
+    segments = [
+        {"id": 1, "start": 0, "end": 2, "text": "Đề xuất phương án API A, chưa thống nhất."},
+        {"id": 2, "start": 2, "end": 4, "text": "Nghi do database timeout."},
+    ]
+    technical = extract_domain_minutes({}, "a" * 32, segments, "technical_discussion")
+    assert "decisions" not in technical["domain"]["sections"]
+    assert technical["domain"]["sections"]["proposed_solutions"]
+    incident = extract_domain_minutes({}, "a" * 32, segments, "issue_incident")
+    assert {item["kind"] for item in incident["domain"]["sections"]["incident_findings"]} == {
+        "suspected_cause"
+    }
+
+
+def test_domain_uat_failure_is_not_acceptance_and_action_has_no_task_state():
+    segments = [
+        {"id": 1, "start": 0, "end": 2, "text": "UAT scenario đăng nhập failed."},
+        {"id": 2, "start": 2, "end": 4, "text": "Cần làm bản sửa API."},
+    ]
+    content = extract_domain_minutes({}, "a" * 32, segments, "uat_feedback")
+    sections = content["domain"]["sections"]
+    assert sections["uat_observations"][0]["acceptance_status"] == "pending"
+    assert sections["actions"][0]["owner"] == sections["actions"][0]["due_date"] == UNKNOWN
+    assert sections["actions"][0]["confirmation_status"] == "suggested"
+    assert "task_id" not in sections["actions"][0]
+    assert "assigned" not in sections["actions"][0]
+
+
+def test_domain_generation_saves_locally_with_network_blocked(tmp_path, monkeypatch):
+    meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path)
+
+    def blocked(*_args, **_kwargs):
+        raise AssertionError("Offline minutes tried to access the network")
+
+    monkeypatch.setattr(socket.socket, "connect", blocked)
+    version_id = OfflineMinutesService(meetings).generate(
+        meeting_id, meeting_type="requirement_gathering"
+    )
+    saved = MinutesStore(meetings).read_version(meeting_id, version_id)
+    assert saved["content"]["domain"]["meeting_type"] == "requirement_gathering"
+
+
+def test_representative_long_domain_transcript_remains_bounded():
+    segments = [
+        {
+            "id": index,
+            "start": float(index),
+            "end": float(index + 1),
+            "text": f"Thảo luận API v2 mục {index}.",
+        }
+        for index in range(1500)
+    ]
+    started = time.perf_counter()
+    content = extract_domain_minutes({}, "a" * 32, segments, "technical_discussion")
+    assert len(content["domain"]["sections"]["technical_considerations"]) == 100
+    assert time.perf_counter() - started < 10
+
+
+def test_domain_excerpt_keeps_exact_working_text_whitespace():
+    content = extract_domain_minutes(
+        {},
+        "a" * 32,
+        [{"id": 1, "start": 0, "end": 1, "text": "  API v2  "}],
+        "technical_discussion",
+    )
+    claim = content["domain"]["sections"]["topics"][0]
+    assert claim["text"] == "API v2"
+    assert claim["sources"][0]["excerpt"] == "  API v2  "
+
+
+def test_universal_hour_draft_covers_meeting_and_preserves_uncertainty():
+    segments = json.loads((Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(encoding="utf-8"))
+    content = extract_domain_minutes({"name": "Bình Minh"}, "a" * 32, segments, "general")
+    domain = content["domain"]
+    sections = domain["sections"]
+    assert domain["metadata"]["participants"]["value"] == []
+    assert set(sections) >= {"summary", "topics", "requirements", "decisions", "proposed_solutions",
+                             "actions", "open_questions", "risks_blockers", "next_steps"}
+    assert sections["requirements"] and sections["technical_considerations"]
+    assert sections["proposed_solutions"] and len(sections["decisions"]) == 1
+    assert sections["actions"][0]["owner"] == sections["actions"][0]["due_date"] == UNKNOWN
+    assert all(item["review_status"] == "needs_review" for entries in sections.values() for item in entries)
+    topic_starts = [item["sources"][0]["start"] for item in sections["topics"]]
+    assert min(topic_starts) < 600 and any(1200 < start < 2400 for start in topic_starts)
+    assert max(topic_starts) > 3000
+    for entries in sections.values():
+        assert len({item["text"].casefold() for item in entries}) == len(entries)
+        for item in entries:
+            source = item["sources"][0]
+            segment = next(part for part in segments if part["id"] == source["segment_id"])
+            assert source["excerpt"] == segment["text"]
+            assert (source["start"], source["end"]) == (segment["start"], segment["end"])
+
+
+def test_universal_draft_deduplicates_and_keeps_empty_sections():
+    content = extract_domain_minutes({}, "a" * 32, [
+        {"id": 1, "start": 0, "end": 1, "text": "  Hôm nay bàn về quầy thu ngân.  "},
+        {"id": 2, "start": 2, "end": 3, "text": "Hôm nay bàn về quầy thu ngân."},
+    ], "general")
+    sections = content["domain"]["sections"]
+    assert len(sections["topics"]) == 1
+    assert sections["decisions"] == sections["actions"] == sections["requirements"] == []
+    assert sections["topics"][0]["sources"][0]["excerpt"] == "  Hôm nay bàn về quầy thu ngân.  "
+
+
+@pytest.mark.parametrize("segments", [[], [{"id": 1, "start": 0, "end": 1, "text": "  "}]])
+def test_universal_draft_rejects_blank_transcript(segments):
+    with pytest.raises(ValueError, match="non-empty transcript"):
+        extract_domain_minutes({}, "a" * 32, segments, "general")
+
+
+def test_universal_failed_save_preserves_approved_version(tmp_path, monkeypatch):
+    meetings, meeting_id, _ = make_meeting_with_run(tmp_path)
+    service = OfflineMinutesService(meetings)
+    first = service.generate(meeting_id, meeting_type="general")
+    content = copy.deepcopy(service.minutes.read_version(meeting_id, first)["content"])
+    for entries in content["domain"]["sections"].values():
+        for item in entries:
+            item["review_status"] = "confirmed"
+    first = service.minutes.edit_domain_version(meeting_id, first, content)
+    service.minutes.approve_version(meeting_id, first)
+    approved = service.minutes.read_version(meeting_id, first)
+    monkeypatch.setattr(service.minutes, "save_version", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        service.generate(meeting_id, meeting_type="general")
+    assert service.minutes.read_version(meeting_id, first) == approved
+    assert len(service.minutes.list_versions(meeting_id)) == 2
