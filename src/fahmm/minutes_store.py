@@ -94,7 +94,7 @@ class MinutesStore:
         *,
         parent_version_id: str | None = None,
     ) -> str:
-        if origin not in ("extractive", "provider", "user_edit"):
+        if origin not in ("extractive", "local_llm", "provider", "user_edit"):
             raise ValueError("Invalid minutes origin")
         if not isinstance(content, dict) or not isinstance(template, str):
             raise TypeError("Invalid minutes content")
@@ -107,10 +107,10 @@ class MinutesStore:
             if parent_manifest["run_id"] != run_id:
                 raise ValueError("Edited minutes must use the parent transcript run")
             source_origin = parent_manifest.get("source_origin")
-            if source_origin not in ("extractive", "provider"):
+            if source_origin not in ("extractive", "local_llm", "provider"):
                 source_origin = (
                     parent_manifest["origin"]
-                    if parent_manifest["origin"] in ("extractive", "provider")
+                    if parent_manifest["origin"] in ("extractive", "local_llm", "provider")
                     else None
                 )
         else:

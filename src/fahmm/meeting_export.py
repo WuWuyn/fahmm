@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -32,11 +33,20 @@ def iter_citations(content: object):
             yield from iter_citations(value)
 
 
+_TIMESTAMP = r"\d{2,}:\d{2}:\d{2}\.\d"
+_SAVED_SOURCE_NOTE = re.compile(rf"[ \t]*\(Nguồn: {_TIMESTAMP}(?:, {_TIMESTAMP})*\)")
+# Older free-form edits can also include the legacy list renderer's seconds suffix.
+_SAVED_LIST_SOURCE = re.compile(r"^(- [^\r\n]*?) \[\d+\.\ds(?:, \d+\.\ds)*\](?=\r?$)", re.MULTILINE)
+
+
 def render_minutes(content: dict) -> str:
     """Render the saved minutes body used by review and export."""
     if content.get("user_text") is not None:
-        return content["user_text"]
+        text = _SAVED_SOURCE_NOTE.sub("", content["user_text"])
+        return _SAVED_LIST_SOURCE.sub(r"\1", text)
     if content.get("domain_schema_version") == 1:
+        if content.get("format") == "denso_warehouse":
+            return _render_denso_minutes(content)
         return _render_domain_minutes(content)
     headings = content.get("headings", {})
     parts = [
@@ -55,13 +65,11 @@ def render_minutes(content: dict) -> str:
         for item in content.get(key, []):
             if key == "actions":
                 line = (
-                    f"{item['task']} · Người phụ trách: {item['owner']} · "
-                    f"Hạn: {item['due_date']} · {item['verification_status']}"
+                    f"{item['task']} · Người phụ trách: {item['owner']} · Hạn: {item['due_date']}"
                 )
             else:
                 line = item["text"]
-            stamps = ", ".join(f"{source['start']:.1f}s" for source in item.get("sources", []))
-            parts.append(f"- {line}" + (f" [{stamps}]" if stamps else ""))
+            parts.append(f"- {line}")
     return "\n".join(parts)
 
 
@@ -69,7 +77,7 @@ DOMAIN_HEADINGS = {
     "summary": "Tóm tắt",
     "topics": "Chủ đề và thảo luận",
     "requirements": "Yêu cầu ứng viên",
-    "decisions": "Quyết định cần xác minh",
+    "decisions": "Quyết định",
     "proposed_solutions": "Phương án đề xuất",
     "open_questions": "Câu hỏi còn mở",
     "risks_blockers": "Rủi ro và trở ngại",
@@ -88,21 +96,177 @@ DOMAIN_MEETING_TYPE_LABELS = {
     "issue_incident": "Vấn đề / sự cố",
     "uat_feedback": "Phản hồi UAT",
 }
-DOMAIN_REVIEW_LABELS = {
-    "needs_review": "Cần xem lại",
-    "confirmed": "Đã xác nhận",
-    "rejected": "Đã loại",
-}
-DOMAIN_ORIGIN_LABELS = {
-    "extractive": "Trích xuất từ phiên âm",
-    "provider": "Bản nháp từ nhà cung cấp",
-    "user_provided": "Người dùng cung cấp",
-}
-DOMAIN_CERTAINTY_LABELS = {
-    "candidate": "Ứng viên",
-    "user_confirmed": "Người dùng xác nhận",
-    "pending": "Chờ xác nhận",
-}
+
+
+def _render_denso_minutes(content: dict) -> str:
+    """Render source-linked local AI claims in the supplied meeting-minutes form."""
+    domain = content["domain"]
+    metadata = domain["metadata"]
+    sections = domain["sections"]
+
+    def value(name: str) -> str:
+        raw = metadata[name]["value"]
+        return ", ".join(raw) if isinstance(raw, list) and raw else raw or "Chưa rõ"
+
+    def cell(text: str) -> str:
+        return " ".join(str(text).replace("|", "/").split())
+
+    def items(name: str) -> list[dict]:
+        return [item for item in sections.get(name, []) if item["review_status"] != "rejected"]
+
+    def table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
+        return [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+            *("| " + " | ".join(cell(part) for part in row) + " |" for row in rows),
+        ]
+
+    def two_columns(name: str, headers: tuple[str, str]) -> list[str]:
+        rows = [(item["label"], item["text"]) for item in items(name)]
+        return table(headers, rows or [("Chưa rõ", "Chưa có thông tin trong bản phiên âm.")])
+
+    title = value("title")
+    summary = items("summary")
+    lines = [
+        "# MEETING MINUTES",
+        title,
+        f"Dự án/khách hàng: {value('project_customer')}",
+        "",
+        *table(
+            ("Ngày họp", "Phạm vi", "Trạng thái"),
+            [(value("meeting_datetime"), value("objective"), "Dự thảo để các bên xác nhận")],
+        ),
+        "",
+        "## 1. Thông tin cuộc họp",
+        *table(
+            ("Hạng mục", "Nội dung"),
+            [
+                ("Tên cuộc họp", title),
+                ("Thời gian", value("meeting_datetime")),
+                ("Địa điểm", "Chưa rõ"),
+                ("Mục tiêu", value("objective")),
+            ],
+        ),
+        "",
+        "### 1.1. Thành phần tham gia",
+        *table(("Nhóm tham gia", "Ghi nhận"), [("Thành phần tham gia", value("participants"))]),
+        "",
+        "## 2. Tóm tắt điều hành",
+        cell(summary[0]["text"]) if summary else "Chưa có thông tin trong bản phiên âm.",
+    ]
+    overview = []
+    for key, label in (
+        ("dashboard_layout", "Dashboard tổng quan"),
+        ("kpi_scope", "Phạm vi KPI"),
+        ("sqdcm_kpis", "KPI SQDCM"),
+        ("color_alerts", "Cảnh báo màu"),
+        ("warehouse_model", "Mô hình 3D"),
+        ("input_data", "Dữ liệu đầu vào"),
+        ("project_actions", "Công việc nhóm dự án"),
+        ("partner_support", "Đề nghị hỗ trợ"),
+    ):
+        overview.extend(
+            (f"{label} — {item['label']}" if item["label"] != "Chưa rõ" else label, item["text"])
+            for item in items(key)
+        )
+    lines.extend(
+        [
+            "",
+            *table(
+                ("Hạng mục", "Điều chỉnh thống nhất"),
+                overview or [("Chưa rõ", "Chưa có thông tin trong bản phiên âm.")],
+            ),
+        ]
+    )
+    decisions = items("decisions")
+    lines.extend(
+        [
+            "",
+            "Kết luận ghi nhận: "
+            + (
+                cell(decisions[0]["text"])
+                if decisions
+                else "Chưa có kết luận được xác nhận trong bản phiên âm."
+            ),
+            "",
+            "## 3. Bố cục Dashboard tổng quan và hiển thị 3D",
+            *two_columns("dashboard_layout", ("Hạng mục", "Nội dung thống nhất")),
+            "",
+            "## 4. Chỉ số KPI SQDCM và cơ chế cảnh báo màu",
+            "### 4.1. Phạm vi số liệu",
+            *two_columns("kpi_scope", ("Hạng mục", "Nội dung")),
+        ]
+    )
+    kpis = [
+        (item["label"], item["text"], item["method"], item["data_source"], item["open_point"])
+        for item in items("sqdcm_kpis")
+    ]
+    if kpis:
+        lines.extend(
+            [
+                "",
+                "### 4.2. Nhóm chỉ số SQDCM",
+                *table(
+                    (
+                        "Nhóm",
+                        "Thông tin cần theo dõi",
+                        "Cách tính / hiển thị",
+                        "Nguồn dữ liệu",
+                        "Cần xác nhận",
+                    ),
+                    kpis,
+                ),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "### 4.3. Cơ chế cảnh báo màu sắc",
+            *two_columns("color_alerts", ("Hạng mục", "Nội dung thống nhất")),
+            "",
+            "## 5. Mô hình 3D hiện trường và dữ liệu đầu vào",
+            "### 5.1. Góp ý điều chỉnh layout 3D",
+            *two_columns("warehouse_model", ("Hạng mục", "Điều chỉnh thống nhất")),
+            "",
+            "### 5.2. Chuẩn hóa kích thước và dữ liệu đầu vào",
+            *two_columns("input_data", ("Hạng mục", "Dữ liệu cần chuẩn hóa")),
+            "",
+            "## 6. Công việc phía nhóm dự án FPT triển khai",
+        ]
+    )
+    actions = []
+    for item in items("project_actions"):
+        owner = item["owner"]
+        task = item["text"] + (f" — Phụ trách: {owner}" if owner != "Chưa rõ" else "")
+        actions.append((task, item["due_date"]))
+    lines.extend(
+        table(
+            ("Công việc cụ thể", "Thời hạn"),
+            actions or [("Chưa có thông tin trong bản phiên âm.", "Chưa rõ")],
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "## 7. Đề nghị phía DENSO hỗ trợ",
+            *table(
+                ("Nội dung nhờ hỗ trợ",),
+                [(item["text"],) for item in items("partner_support")]
+                or [("Chưa có thông tin trong bản phiên âm.",)],
+            ),
+        ]
+    )
+    next_steps = items("next_steps")
+    if next_steps:
+        lines.extend(
+            [
+                "",
+                "## 8. Công việc tiếp theo",
+                *table(("Công việc tiếp theo",), [(item["text"],) for item in next_steps]),
+            ]
+        )
+    lines.extend(["", "— HẾT —"])
+    return "\n".join(lines)
 
 
 def _render_domain_minutes(content: dict) -> str:
@@ -121,9 +285,18 @@ def _render_domain_minutes(content: dict) -> str:
         f"Người tham dự: {participants}",
         f"Mục tiêu: {value('objective') or 'Chưa rõ'}",
     ]
-    universal_sections = {"summary", "topics", "requirements", "decisions", "proposed_solutions",
-                          "open_questions", "risks_blockers", "actions", "next_steps",
-                          "technical_considerations"}
+    universal_sections = {
+        "summary",
+        "topics",
+        "requirements",
+        "decisions",
+        "proposed_solutions",
+        "open_questions",
+        "risks_blockers",
+        "actions",
+        "next_steps",
+        "technical_considerations",
+    }
     for key, heading in DOMAIN_HEADINGS.items():
         if domain["meeting_type"] == "general" and key not in universal_sections:
             continue
@@ -134,48 +307,38 @@ def _render_domain_minutes(content: dict) -> str:
             continue
         lines.extend(("", f"## {heading}"))
         if not items:
-            lines.append("Chưa có thông tin được xác minh từ bản phiên âm.")
+            lines.append("Chưa có thông tin trong bản phiên âm.")
+            continue
+        if key in {"actions", "next_steps"}:
+
+            def table_cell(value: str) -> str:
+                return " ".join(value.replace("|", "/").split())
+
+            if key == "actions":
+                lines.extend(("| Công việc | Người phụ trách | Thời hạn |", "| --- | --- | --- |"))
+                lines.extend(
+                    "| "
+                    + " | ".join(
+                        table_cell(str(value))
+                        for value in (item["text"], item["owner"], item["due_date"])
+                    )
+                    + " |"
+                    for item in items
+                )
+            else:
+                lines.extend(("| Công việc tiếp theo |", "| --- |"))
+                lines.extend(f"| {table_cell(item['text'])} |" for item in items)
             continue
         for item in items:
-            if item["review_status"] == "confirmed":
-                line = f"- {item['text']}"
-                if key == "actions":
-                    details = [
-                        f"Người phụ trách: {item['owner']}" if item["owner"] != "Chưa rõ" else "",
-                        f"Hạn: {item['due_date']}" if item["due_date"] != "Chưa rõ" else "",
-                    ]
-                    if any(details):
-                        line += " — " + " · ".join(detail for detail in details if detail)
-                lines.append(line)
-                continue
-            qualifiers = [
-                DOMAIN_REVIEW_LABELS[item["review_status"]],
-                DOMAIN_ORIGIN_LABELS[item["origin"]],
-            ]
-            if "kind" in item:
-                qualifiers.append(item["kind"])
-            if "formality" in item:
-                qualifiers.append(DOMAIN_CERTAINTY_LABELS[item["formality"]])
-            if "acceptance_status" in item:
-                qualifiers.append(
-                    f"Trạng thái chấp nhận: {DOMAIN_CERTAINTY_LABELS[item['acceptance_status']]}"
-                )
+            line = f"- {item['text']}"
             if key == "actions":
-                qualifiers.extend(
-                    (
-                        f"Người phụ trách: {item['owner']}",
-                        f"Hạn: {item['due_date']}",
-                        f"{'Đề xuất' if item['confirmation_status'] == 'suggested' else 'Đã xem lại'}; chưa phải công việc được theo dõi",
-                    )
-                )
-            citations = ", ".join(
-                f"đoạn {source['segment_id']} {format_timestamp(source['start'])}–{format_timestamp(source['end'])}"
-                for source in item["sources"]
-            )
-            note = "; ".join(
-                qualifiers + ([citations] if citations else ["không có nguồn phiên âm"])
-            )
-            lines.append(f"- {item['text']} ({note})")
+                details = [
+                    f"Người phụ trách: {item['owner']}" if item["owner"] != "Chưa rõ" else "",
+                    f"Hạn: {item['due_date']}" if item["due_date"] != "Chưa rõ" else "",
+                ]
+                if any(details):
+                    line += " — " + " · ".join(detail for detail in details if detail)
+            lines.append(line)
     return "\n".join(lines)
 
 
@@ -224,7 +387,9 @@ class MeetingExportService:
             temporary.unlink(missing_ok=True)
         return target
 
-    def _write_text(self, destination: Path | None, content: str, *, overwrite: bool) -> Path | None:
+    def _write_text(
+        self, destination: Path | None, content: str, *, overwrite: bool
+    ) -> Path | None:
         return self._write_bytes(destination, content.encode("utf-8"), overwrite=overwrite)
 
     def export_minutes(
@@ -244,7 +409,8 @@ class MeetingExportService:
         if Path(destination).suffix.lower() != ".docx":
             raise ValueError("Choose a .docx export destination")
         return self._write_bytes(
-            destination, render_docx(self.minutes_markdown(meeting_id, version_id)),
+            destination,
+            render_docx(self.minutes_markdown(meeting_id, version_id)),
             overwrite=overwrite,
         )
 
@@ -315,56 +481,25 @@ class MeetingExportService:
     def minutes_markdown(self, meeting_id: str, version_id: str) -> str:
         version = self.minutes.read_version(meeting_id, version_id)
         manifest, content = version["manifest"], version["content"]
-        state = manifest["review_state"]
-        if state not in ("approved", "unverified"):
-            raise ValueError("Unknown minutes review state")
         body = render_minutes(content).rstrip()
-        lines = [f"> Review state: {state.title()}"]
+        lines = []
         if manifest["origin"] == "extractive":
-            lines.append("> Draft type: Source-linked extractive draft; not a semantic AI summary.")
+            lines.append("> Generation: Local transcript extraction; not a semantic AI summary.")
+        elif manifest["origin"] == "local_llm":
+            lines.append("> Generation: Local Ollama DENSO-form draft.")
         elif manifest["origin"] == "provider":
-            lines.append(
-                "> Draft type: Provider-generated draft; verify claims against the source."
-            )
+            lines.append("> Generation: Configured provider.")
         elif manifest["origin"] == "user_edit":
             if manifest.get("source_origin") == "extractive":
-                lines.append(
-                    "> Draft type: Edited from an offline extractive draft; "
-                    "user edits have not been automatically verified."
-                )
+                lines.append("> Generation: Edited from locally extracted minutes.")
+            elif manifest.get("source_origin") == "local_llm":
+                lines.append("> Generation: Edited from local Ollama semantic minutes.")
             elif manifest.get("source_origin") == "provider":
-                lines.append(
-                    "> Draft type: Edited from a provider-generated draft; "
-                    "user edits have not been automatically verified."
-                )
+                lines.append("> Generation: Edited from provider-generated minutes.")
             else:
-                lines.append(
-                    "> Draft type: Edited version; original draft type unavailable. "
-                    "User edits have not been automatically verified."
-                )
+                lines.append("> Generation: Edited minutes; original source unavailable.")
         lines.append(
             "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
         )
         lines.extend(("", body))
-        if content.get("user_text") is not None:
-            citations = {
-                (source["segment_id"], source["start"], source["end"])
-                for source in iter_citations(content)
-            }
-            if citations:
-                lines.extend(
-                    [
-                        "",
-                        "## Source references from the underlying draft",
-                        "",
-                        "These references do not automatically verify the edited text.",
-                        "",
-                    ]
-                )
-                for segment_id, start, end in sorted(
-                    citations, key=lambda item: (item[1], item[0])
-                ):
-                    lines.append(
-                        f"- Segment {segment_id}: {format_timestamp(start)}–{format_timestamp(end)}"
-                    )
         return "\n".join(lines).rstrip() + "\n"

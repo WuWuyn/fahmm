@@ -116,19 +116,32 @@ def test_one_click_bridge_to_saved_export_uses_working_transcript(tmp_path):
     meeting_id = app.store.create({})
     run_id = uuid.uuid4().hex
     model = InstalledModel(uuid.uuid4().hex, "test/model", "test", "MIT", "a" * 40, 1, tmp_path)
-    segments = json.loads((Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(encoding="utf-8"))
+    segments = json.loads(
+        (Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(
+            encoding="utf-8"
+        )
+    )
     app.transcripts.save_run(meeting_id, run_id, model, "vi", {"duration": 3600}, segments)
-    app.transcripts.save_edits(meeting_id, run_id, {2: "Quầy bán lẻ cần có chức năng quét mã vạch và in hóa đơn VAT."})
-    version_id = call(app, "minutes.generateOffline", meetingId=meeting_id, runId=None,
-                      meetingType="general")["versionId"]
+    app.transcripts.save_edits(
+        meeting_id, run_id, {2: "Quầy bán lẻ cần có chức năng quét mã vạch và in hóa đơn VAT."}
+    )
+    version_id = call(
+        app, "minutes.generateOffline", meetingId=meeting_id, runId=None, meetingType="general"
+    )["versionId"]
     saved = call(app, "minutes.read", meetingId=meeting_id, versionId=version_id)["version"]
     sections = saved["content"]["domain"]["sections"]
     assert saved["manifest"]["review_state"] == "unverified"
     assert any("VAT" in item["text"] for item in sections["requirements"])
     assert any("VAT" in item["sources"][0]["excerpt"] for item in sections["requirements"])
     assert call(app, "minutes.list", meetingId=meeting_id)["activeVersionId"] == version_id
-    rendered = call(app, "minutes.renderBody", meetingId=meeting_id, versionId=version_id)["markdown"]
-    exported = call(app, "export.minutesMarkdown", meetingId=meeting_id, versionId=version_id)["markdown"]
+    rendered = call(app, "minutes.renderBody", meetingId=meeting_id, versionId=version_id)[
+        "markdown"
+    ]
+    exported = call(app, "export.minutesMarkdown", meetingId=meeting_id, versionId=version_id)[
+        "markdown"
+    ]
     assert "VAT" in rendered and "VAT" in exported
-    assert "## Quyết định cần xác minh" in exported
-    assert "đoạn 12" in exported
+    assert "## Quyết định" in exported
+    assert "Cần xem lại" not in exported
+    assert "Review state:" not in exported
+    assert any(item["sources"] for items in sections.values() for item in items)

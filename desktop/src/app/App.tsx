@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { HashRouter, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { AudioLines, ChevronDown, ChevronLeft, ChevronRight, ListMusic, LockKeyhole, Moon, Settings2, Sun, Boxes, RotateCcw } from "lucide-react";
+import { AudioLines, ChevronDown, ChevronLeft, ChevronRight, FileText, ListMusic, LockKeyhole, Moon, Settings2, Sun, Boxes, RotateCcw } from "lucide-react";
 import { Recorder } from "@/features/recorder/Recorder";
 import { Meetings } from "@/features/meetings/Meetings";
 import { Models } from "@/features/models/Models";
+import { Reports } from "@/features/reports/Reports";
 import { Settings } from "@/features/settings/Settings";
 import { bridgeStatus, restartBridge } from "@/shared/bridge/client";
 import { useUIStore } from "@/shared/uiStore";
@@ -16,6 +17,7 @@ import "@/styles/App.css";
 const areas = [
   { path: "/recorder", label: "Recorder", icon: AudioLines },
   { path: "/meetings", label: "Meetings", icon: ListMusic },
+  { path: "/reports", label: "Reports", icon: FileText },
   { path: "/models", label: "Models", icon: Boxes },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ] as const;
@@ -111,6 +113,7 @@ function App() {
         <Route path="/" element={<Navigate to="/recorder" replace />} />
         <Route path="/recorder" element={<Recorder key={backendEpoch} backendReady={backendReady} />} />
         <Route path="/meetings" element={<Meetings key={backendEpoch} backendReady={backendReady} />} />
+        <Route path="/reports" element={<Reports key={backendEpoch} backendReady={backendReady} />} />
         <Route path="/models" element={<Models key={backendEpoch} backendReady={backendReady} />} />
         <Route path="/settings" element={<Settings key={backendEpoch} backendReady={backendReady} />} />
       </Routes>

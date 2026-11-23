@@ -25,7 +25,7 @@ it.each(MEETING_TYPES)("renders domain review controls for %s", (kind) => {
   expect(screen.getByRole("button", { name: "Summary" }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByRole("button", { name: "Topics" }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByDisplayValue("Review API")).toBeNull();
-  expect(screen.getByRole("button", { name: "Save reviewed claims as new version" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "Save notes as new version" }).hasAttribute("disabled")).toBe(true);
   const special: Record<string, string | null> = { general: null, requirement_gathering: "Requirements",
     technical_discussion: "Technical considerations", project_status: "Status updates",
     issue_incident: "Incident findings", uat_feedback: "UAT observations" };
@@ -38,7 +38,7 @@ it.each(MEETING_TYPES)("renders domain review controls for %s", (kind) => {
   }
 });
 
-it("shows saved excerpt, warns about drift, seeks audio, and saves a reviewed correction", async () => {
+it("shows saved excerpt, warns about drift, seeks audio, and saves a correction", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_draft: DomainContent) => undefined);
   const onSeek = vi.fn();
@@ -52,14 +52,12 @@ it("shows saved excerpt, warns about drift, seeks audio, and saves a reviewed co
   expect(screen.getByRole("alert").textContent).toContain("Updated API");
   await user.click(screen.getByRole("button", { name: /Seek source segment 1/ }));
   expect(onSeek).toHaveBeenCalledWith(0);
-  await user.click(screen.getByRole("button", { name: "Use current transcript excerpt and review again" }));
-  const status = screen.getAllByRole("combobox")[0];
-  await user.selectOptions(status, "confirmed");
-  await user.click(screen.getByRole("button", { name: "Save reviewed claims as new version" }));
+  await user.click(screen.getByRole("button", { name: "Use current transcript excerpt" }));
+  await user.click(screen.getByRole("button", { name: "Save notes as new version" }));
   await waitFor(() => expect(onSave).toHaveBeenCalled());
   const saved = onSave.mock.calls[0][0] as DomainContent;
   expect(saved.domain.sections.topics[0].sources[0].excerpt).toBe("Updated API");
-  expect(saved.domain.sections.topics[0].review_status).toBe("confirmed");
+  expect(screen.queryByRole("combobox", { name: "Review state" })).toBeNull();
 });
 
 it("can add and remove a blank claim without leaving the draft dirty", async () => {
@@ -70,10 +68,10 @@ it("can add and remove a blank claim without leaving the draft dirty", async () 
   await user.click(within(decisions).getByRole("button", { name: "Add claim" }));
   expect(within(decisions).getByRole("button", { name: "Decisions" }).getAttribute("aria-expanded")).toBe("true");
   expect(within(decisions).getByRole("textbox", { name: "Claim text" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Save reviewed claims as new version" }).hasAttribute("disabled")).toBe(false);
+  expect(screen.getByRole("button", { name: "Save notes as new version" }).hasAttribute("disabled")).toBe(false);
   await user.click(within(decisions).getByRole("button", { name: /Remove claim/ }));
   expect(within(decisions).queryByRole("textbox", { name: "Claim text" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Save reviewed claims as new version" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "Save notes as new version" }).hasAttribute("disabled")).toBe(true);
 });
 
 it("removes a saved claim from the new version without changing the original", async () => {
@@ -86,40 +84,17 @@ it("removes a saved claim from the new version without changing the original", a
   await user.click(within(topics).getByRole("button", { name: "Topics" }));
   await user.click(within(topics).getByRole("button", { name: "Remove claim aaaaaaaa" }));
   expect(within(topics).queryByRole("textbox", { name: "Claim text" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Save reviewed claims as new version" }));
+  await user.click(screen.getByRole("button", { name: "Save notes as new version" }));
   await waitFor(() => expect(onSave).toHaveBeenCalled());
   expect((onSave.mock.calls[0][0] as DomainContent).domain.sections.topics).toBeUndefined();
   expect(original.domain.sections.topics[0].text).toBe("Review API");
 });
 
-it("confirms and saves every claim across collapsed sections in one action", async () => {
-  const user = userEvent.setup();
-  const original = content("general");
-  original.domain.sections.decisions = [{ item_id: "b".repeat(32), text: "Use API", origin: "user_provided",
-    review_status: "rejected", sources: [] }];
-  original.domain.sections.actions = [{ item_id: "c".repeat(32), text: "Document API", origin: "user_provided",
-    review_status: "confirmed", sources: [], owner: "Mai", due_date: "Chưa rõ", confirmation_status: "suggested" }];
-  const onSave = vi.fn(async (_draft: DomainContent) => undefined);
-  render(<DomainMinutesReview content={original} drift={[]} busy={false} onSave={onSave}
+it("does not show review controls for existing claims", () => {
+  render(<DomainMinutesReview content={content("general")} drift={[]} busy={false} onSave={vi.fn()}
     onDirtyChange={vi.fn()} onSeek={vi.fn()} />);
-  expect(screen.getByText("1 of 3 claims confirmed")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Confirm all claims" }));
-  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-  const saved = onSave.mock.calls[0][0] as DomainContent;
-  expect(Object.values(saved.domain.sections).flat().map((claim) => claim.review_status))
-    .toEqual(["confirmed", "confirmed", "confirmed"]);
-  expect(saved.domain.sections.topics[0].sources).toEqual(original.domain.sections.topics[0].sources);
-  expect(saved.domain.sections.decisions[0].item_id).toBe(original.domain.sections.decisions[0].item_id);
-  expect(original.domain.sections.topics[0].review_status).toBe("needs_review");
-  expect(original.domain.sections.decisions[0].review_status).toBe("rejected");
-});
-
-it("disables bulk confirmation when all claims are already confirmed", () => {
-  const draft = content("general");
-  draft.domain.sections.topics[0].review_status = "confirmed";
-  render(<DomainMinutesReview content={draft} drift={[]} busy={false} onSave={vi.fn()}
-    onDirtyChange={vi.fn()} onSeek={vi.fn()} />);
-  expect(screen.getByRole("button", { name: "Confirm all claims" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Confirm all claims" })).toBeNull();
+  expect(screen.queryByText("1 of 3 claims confirmed")).toBeNull();
 });
 
 it("switches controls to Vietnamese without changing saved content", async () => {

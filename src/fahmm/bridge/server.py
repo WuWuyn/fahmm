@@ -35,12 +35,14 @@ class BridgeApplication:
         from fahmm.cloud_minutes import CloudMinutesService
         from fahmm.controller import SessionController
         from fahmm.library import MeetingLibrary
+        from fahmm.local_llm import LocalMinutesJobs
         from fahmm.meeting_deletion import MeetingDeletionService
         from fahmm.meeting_export import MeetingExportService
         from fahmm.minutes_store import MinutesStore
         from fahmm.models import ModelManager
         from fahmm.offline_minutes import OfflineMinutesService
         from fahmm.providers import ProviderProfiles
+        from fahmm.reports.service import ReportService
         from fahmm.storage import MeetingStore
         from fahmm.transcripts import TranscriptStore
 
@@ -56,9 +58,13 @@ class BridgeApplication:
         self.deletion = MeetingDeletionService(self.store)
         self.asr = ASRJobController(self.store, self.models)
         self.offline_minutes = OfflineMinutesService(self.store)
+        self.local_minutes = LocalMinutesJobs(
+            self.store, self.models.root.parent / "local_llm.json"
+        )
         self.cloud_minutes = CloudMinutesService(self.store, self.profiles)
         self.export = MeetingExportService(self.store, self.models.root)
         self.transcripts = TranscriptStore(self.store)
+        self.reports = ReportService(self.store, self.transcripts, self.models.root.parent)
         self.minutes = MinutesStore(self.store)
         self._cloud_previews: dict[str, tuple[Any, Any, float]] = {}
         self._media_tickets: dict[str, tuple[str, Path, float]] = {}
@@ -80,6 +86,27 @@ class BridgeApplication:
             return self._error(request_id, "INVALID_REQUEST", "Start a desktop session first")
         elif operation == "system.health":
             result = {"status": "ready"}
+        elif operation == "report.models":
+            result = self.reports.models()
+        elif operation == "report.status":
+            result = {"report": self.reports.status()}
+        elif operation == "report.addFile":
+            result = {"report": self.reports.add_file(params["nativePath"])}
+        elif operation == "report.addTranscript":
+            result = {"report": self.reports.add_transcript(params["meetingId"])}
+        elif operation == "report.clear":
+            result = {"report": self.reports.clear()}
+        elif operation == "report.start":
+            self.reports.start(params["model"], params["form"])
+            result = {"started": True}
+        elif operation == "report.pull":
+            self.reports.pull(params["model"])
+            result = {"started": True}
+        elif operation == "report.cancel":
+            self.reports.cancel()
+            result = {"cancelled": True}
+        elif operation == "report.export":
+            result = self.reports.export(params["nativePath"])
         elif operation == "recording.devices":
             devices = self.recorder.capture.list_devices()
             result = {
@@ -297,6 +324,21 @@ class BridgeApplication:
                     params["meetingId"], params.get("runId"), meeting_type=params.get("meetingType")
                 )
             }
+        elif operation == "llm.availability":
+            result = self.local_minutes.availability()
+        elif operation == "llm.select":
+            self.local_minutes.select(params["model"])
+            result = {"selectedModel": self.local_minutes.selected_model()}
+        elif operation == "llm.pullStart":
+            self.local_minutes.start_pull()
+            result = {"started": True}
+        elif operation == "llm.pullStatus":
+            result = self.local_minutes.status("_pull")
+        elif operation == "minutes.generateLocalStart":
+            self.local_minutes.start_generation(params["meetingId"], params["meetingType"])
+            result = {"started": True}
+        elif operation == "minutes.localStatus":
+            result = self.local_minutes.status("_generation")
         elif operation == "cloud.preview":
             snapshot = self.cloud_minutes.prepare(
                 params["meetingId"],
@@ -370,7 +412,9 @@ class BridgeApplication:
         elif operation == "export.transcriptText":
             result = {"text": self.export.transcript_text(params["meetingId"], params["runId"])}
         elif operation == "export.transcriptPlainText":
-            result = {"text": self.export.transcript_plain_text(params["meetingId"], params["runId"])}
+            result = {
+                "text": self.export.transcript_plain_text(params["meetingId"], params["runId"])
+            }
         elif operation == "export.audioInfo":
             result = self.export.audio_info(params["meetingId"])
         elif operation == "export.writeMinutes":
@@ -399,13 +443,17 @@ class BridgeApplication:
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "export.writeTranscriptPlain":
             target = self.export.export_transcript_plain(
-                params["meetingId"], params["runId"], Path(params["nativePath"]),
+                params["meetingId"],
+                params["runId"],
+                Path(params["nativePath"]),
                 overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "export.writeAudio":
             target = self.export.export_audio(
-                params["meetingId"], Path(params["nativePath"]), overwrite=params["overwrite"],
+                params["meetingId"],
+                Path(params["nativePath"]),
+                overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "media.ticket":

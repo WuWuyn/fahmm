@@ -42,3 +42,11 @@ export async function exportSaved(
 export async function exportAudio(meetingId: string): Promise<{ cancelled?: boolean; saved?: boolean; displayName?: string }> {
   return invoke("bridge_export_audio", { meetingId });
 }
+
+export async function importReportFile(): Promise<{ cancelled?: boolean }> {
+  return invoke("bridge_report_import");
+}
+
+export async function exportReport(): Promise<{ cancelled?: boolean; saved?: boolean }> {
+  return invoke("bridge_report_export");
+}
