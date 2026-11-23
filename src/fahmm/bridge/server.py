@@ -58,7 +58,9 @@ class BridgeApplication:
         self.deletion = MeetingDeletionService(self.store)
         self.asr = ASRJobController(self.store, self.models)
         self.offline_minutes = OfflineMinutesService(self.store)
-        self.local_minutes = LocalMinutesJobs(self.store, self.models.root.parent / "local_llm.json")
+        self.local_minutes = LocalMinutesJobs(
+            self.store, self.models.root.parent / "local_llm.json"
+        )
         self.cloud_minutes = CloudMinutesService(self.store, self.profiles)
         self.export = MeetingExportService(self.store, self.models.root)
         self.transcripts = TranscriptStore(self.store)
@@ -410,7 +412,9 @@ class BridgeApplication:
         elif operation == "export.transcriptText":
             result = {"text": self.export.transcript_text(params["meetingId"], params["runId"])}
         elif operation == "export.transcriptPlainText":
-            result = {"text": self.export.transcript_plain_text(params["meetingId"], params["runId"])}
+            result = {
+                "text": self.export.transcript_plain_text(params["meetingId"], params["runId"])
+            }
         elif operation == "export.audioInfo":
             result = self.export.audio_info(params["meetingId"])
         elif operation == "export.writeMinutes":
@@ -439,13 +443,17 @@ class BridgeApplication:
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "export.writeTranscriptPlain":
             target = self.export.export_transcript_plain(
-                params["meetingId"], params["runId"], Path(params["nativePath"]),
+                params["meetingId"],
+                params["runId"],
+                Path(params["nativePath"]),
                 overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "export.writeAudio":
             target = self.export.export_audio(
-                params["meetingId"], Path(params["nativePath"]), overwrite=params["overwrite"],
+                params["meetingId"],
+                Path(params["nativePath"]),
+                overwrite=params["overwrite"],
             )
             result = {"saved": target is not None, "displayName": target.name if target else ""}
         elif operation == "media.ticket":

@@ -109,26 +109,38 @@ def test_profile_redaction_and_saved_exports(tmp_path):
     assert "Biên bản tiếng Việt" in destination.read_text(encoding="utf-8")
     word_file = tmp_path / "minutes.docx"
     word_export = call(
-        app, "export.writeMinutesDocx", meetingId=meeting, versionId=version,
-        nativePath=str(word_file), overwrite=False,
+        app,
+        "export.writeMinutesDocx",
+        meetingId=meeting,
+        versionId=version,
+        nativePath=str(word_file),
+        overwrite=False,
     )
     assert word_export == {"saved": True, "displayName": "minutes.docx"}
     assert word_file.read_bytes().startswith(b"PK")
     plain_file = tmp_path / "plain.txt"
     assert call(
-        app, "export.writeTranscriptPlain", meetingId=meeting, runId=run_id,
-        nativePath=str(plain_file), overwrite=False,
+        app,
+        "export.writeTranscriptPlain",
+        meetingId=meeting,
+        runId=run_id,
+        nativePath=str(plain_file),
+        overwrite=False,
     ) == {"saved": True, "displayName": "plain.txt"}
     assert plain_file.read_text(encoding="utf-8") == "Xin chào\n"
     audio_source = app.store._meeting_dir(meeting) / "recording.wav"
     audio_source.write_bytes(b"RIFF test audio bytes")
     app.store.update_metadata(meeting, state="completed")
     assert call(app, "export.audioInfo", meetingId=meeting) == {
-        "fileName": "recording.wav", "extension": "wav",
+        "fileName": "recording.wav",
+        "extension": "wav",
     }
     audio_file = tmp_path / "export.wav"
     assert call(
-        app, "export.writeAudio", meetingId=meeting, nativePath=str(audio_file),
+        app,
+        "export.writeAudio",
+        meetingId=meeting,
+        nativePath=str(audio_file),
         overwrite=False,
     ) == {"saved": True, "displayName": "export.wav"}
     assert audio_file.read_bytes() == audio_source.read_bytes()

@@ -26,8 +26,9 @@ def _safe_text(value: str) -> str:
     return "".join(char for char in value if char in "\t\n\r" or ord(char) >= 32)
 
 
-def _paragraph(body: ET.Element, text: str, style: str, *, indent: bool = False,
-               bold: bool = False) -> None:
+def _paragraph(
+    body: ET.Element, text: str, style: str, *, indent: bool = False, bold: bool = False
+) -> None:
     paragraph = ET.SubElement(body, _tag("p"))
     properties = ET.SubElement(paragraph, _tag("pPr"))
     ET.SubElement(properties, _tag("pStyle"), {_tag("val"): style})
@@ -36,7 +37,9 @@ def _paragraph(body: ET.Element, text: str, style: str, *, indent: bool = False,
     run = ET.SubElement(paragraph, _tag("r"))
     if bold:
         ET.SubElement(ET.SubElement(run, _tag("rPr")), _tag("b"))
-    node = ET.SubElement(run, _tag("t"), {"{http://www.w3.org/XML/1998/namespace}space": "preserve"})
+    node = ET.SubElement(
+        run, _tag("t"), {"{http://www.w3.org/XML/1998/namespace}space": "preserve"}
+    )
     node.text = _safe_text(text)
 
 
@@ -46,8 +49,9 @@ def _table(body: ET.Element, rows: list[list[str]]) -> None:
     ET.SubElement(properties, _tag("tblW"), {_tag("w"): "0", _tag("type"): "auto"})
     borders = ET.SubElement(properties, _tag("tblBorders"))
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        ET.SubElement(borders, _tag(edge), {_tag("val"): "single", _tag("sz"): "4",
-                                          _tag("color"): "D9D9D9"})
+        ET.SubElement(
+            borders, _tag(edge), {_tag("val"): "single", _tag("sz"): "4", _tag("color"): "D9D9D9"}
+        )
     for row_index, values in enumerate(rows):
         row = ET.SubElement(table, _tag("tr"))
         for value in values:
@@ -104,10 +108,19 @@ def _document(markdown: str) -> bytes:
             _paragraph(body, line, "Normal")
     section = ET.SubElement(body, _tag("sectPr"))
     ET.SubElement(section, _tag("pgSz"), {_tag("w"): "11906", _tag("h"): "16838"})
-    ET.SubElement(section, _tag("pgMar"), {
-        _tag("top"): "1134", _tag("right"): "1134", _tag("bottom"): "1134", _tag("left"): "1134",
-        _tag("header"): "708", _tag("footer"): "708", _tag("gutter"): "0",
-    })
+    ET.SubElement(
+        section,
+        _tag("pgMar"),
+        {
+            _tag("top"): "1134",
+            _tag("right"): "1134",
+            _tag("bottom"): "1134",
+            _tag("left"): "1134",
+            _tag("header"): "708",
+            _tag("footer"): "708",
+            _tag("gutter"): "0",
+        },
+    )
     return _xml(document)
 
 
@@ -121,10 +134,14 @@ def _styles() -> bytes:
         ("Quote", 20, False, 40, 100),
         ("ListParagraph", 22, False, 0, 80),
     ):
-        style = ET.SubElement(styles, _tag("style"), {_tag("type"): "paragraph", _tag("styleId"): style_id})
+        style = ET.SubElement(
+            styles, _tag("style"), {_tag("type"): "paragraph", _tag("styleId"): style_id}
+        )
         ET.SubElement(style, _tag("name"), {_tag("val"): style_id})
         properties = ET.SubElement(style, _tag("pPr"))
-        ET.SubElement(properties, _tag("spacing"), {_tag("before"): str(before), _tag("after"): str(after)})
+        ET.SubElement(
+            properties, _tag("spacing"), {_tag("before"): str(before), _tag("after"): str(after)}
+        )
         run = ET.SubElement(style, _tag("rPr"))
         ET.SubElement(run, _tag("rFonts"), {_tag("ascii"): "Aptos", _tag("hAnsi"): "Aptos"})
         ET.SubElement(run, _tag("sz"), {_tag("val"): str(size)})
@@ -136,14 +153,45 @@ def _styles() -> bytes:
 def render_docx(markdown: str) -> bytes:
     """Return a valid OOXML document without requiring Word or a network service."""
     types = ET.Element(f"{{{CONTENT}}}Types")
-    ET.SubElement(types, f"{{{CONTENT}}}Default", {"Extension": "rels", "ContentType": "application/vnd.openxmlformats-package.relationships+xml"})
-    ET.SubElement(types, f"{{{CONTENT}}}Default", {"Extension": "xml", "ContentType": "application/xml"})
-    ET.SubElement(types, f"{{{CONTENT}}}Override", {"PartName": "/word/document.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"})
-    ET.SubElement(types, f"{{{CONTENT}}}Override", {"PartName": "/word/styles.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"})
+    ET.SubElement(
+        types,
+        f"{{{CONTENT}}}Default",
+        {
+            "Extension": "rels",
+            "ContentType": "application/vnd.openxmlformats-package.relationships+xml",
+        },
+    )
+    ET.SubElement(
+        types, f"{{{CONTENT}}}Default", {"Extension": "xml", "ContentType": "application/xml"}
+    )
+    ET.SubElement(
+        types,
+        f"{{{CONTENT}}}Override",
+        {
+            "PartName": "/word/document.xml",
+            "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+        },
+    )
+    ET.SubElement(
+        types,
+        f"{{{CONTENT}}}Override",
+        {
+            "PartName": "/word/styles.xml",
+            "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
+        },
+    )
     root_rels = ET.Element(f"{{{REL}}}Relationships")
-    ET.SubElement(root_rels, f"{{{REL}}}Relationship", {"Id": "rId1", "Type": f"{DOC_REL}/officeDocument", "Target": "word/document.xml"})
+    ET.SubElement(
+        root_rels,
+        f"{{{REL}}}Relationship",
+        {"Id": "rId1", "Type": f"{DOC_REL}/officeDocument", "Target": "word/document.xml"},
+    )
     doc_rels = ET.Element(f"{{{REL}}}Relationships")
-    ET.SubElement(doc_rels, f"{{{REL}}}Relationship", {"Id": "rId1", "Type": f"{DOC_REL}/styles", "Target": "styles.xml"})
+    ET.SubElement(
+        doc_rels,
+        f"{{{REL}}}Relationship",
+        {"Id": "rId1", "Type": f"{DOC_REL}/styles", "Target": "styles.xml"},
+    )
     result = io.BytesIO()
     with ZipFile(result, "w", ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _xml(types))

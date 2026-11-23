@@ -195,17 +195,32 @@ def test_domain_excerpt_keeps_exact_working_text_whitespace():
 
 
 def test_universal_hour_draft_covers_meeting_and_preserves_uncertainty():
-    segments = json.loads((Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(encoding="utf-8"))
+    segments = json.loads(
+        (Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(
+            encoding="utf-8"
+        )
+    )
     content = extract_domain_minutes({"name": "Bình Minh"}, "a" * 32, segments, "general")
     domain = content["domain"]
     sections = domain["sections"]
     assert domain["metadata"]["participants"]["value"] == []
-    assert set(sections) >= {"summary", "topics", "requirements", "decisions", "proposed_solutions",
-                             "actions", "open_questions", "risks_blockers", "next_steps"}
+    assert set(sections) >= {
+        "summary",
+        "topics",
+        "requirements",
+        "decisions",
+        "proposed_solutions",
+        "actions",
+        "open_questions",
+        "risks_blockers",
+        "next_steps",
+    }
     assert sections["requirements"] and sections["technical_considerations"]
     assert sections["proposed_solutions"] and len(sections["decisions"]) == 1
     assert sections["actions"][0]["owner"] == sections["actions"][0]["due_date"] == UNKNOWN
-    assert all(item["review_status"] == "needs_review" for entries in sections.values() for item in entries)
+    assert all(
+        item["review_status"] == "needs_review" for entries in sections.values() for item in entries
+    )
     topic_starts = [item["sources"][0]["start"] for item in sections["topics"]]
     assert min(topic_starts) < 600 and any(1200 < start < 2400 for start in topic_starts)
     assert max(topic_starts) > 3000
@@ -219,8 +234,14 @@ def test_universal_hour_draft_covers_meeting_and_preserves_uncertainty():
 
 
 def test_requirement_draft_keeps_questions_out_of_actions_and_includes_risks():
-    segments = json.loads((Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(encoding="utf-8"))
-    sections = extract_domain_minutes({}, "a" * 32, segments, "requirement_gathering")["domain"]["sections"]
+    segments = json.loads(
+        (Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sections = extract_domain_minutes({}, "a" * 32, segments, "requirement_gathering")["domain"][
+        "sections"
+    ]
     assert [item["sources"][0]["segment_id"] for item in sections["actions"]] == [9]
     assert {item["sources"][0]["segment_id"] for item in sections["open_questions"]} == {3, 12}
     assert {item["sources"][0]["segment_id"] for item in sections["risks_blockers"]} == {5, 10}
@@ -229,10 +250,15 @@ def test_requirement_draft_keeps_questions_out_of_actions_and_includes_risks():
 
 
 def test_universal_draft_deduplicates_and_keeps_empty_sections():
-    content = extract_domain_minutes({}, "a" * 32, [
-        {"id": 1, "start": 0, "end": 1, "text": "  Hôm nay bàn về quầy thu ngân.  "},
-        {"id": 2, "start": 2, "end": 3, "text": "Hôm nay bàn về quầy thu ngân."},
-    ], "general")
+    content = extract_domain_minutes(
+        {},
+        "a" * 32,
+        [
+            {"id": 1, "start": 0, "end": 1, "text": "  Hôm nay bàn về quầy thu ngân.  "},
+            {"id": 2, "start": 2, "end": 3, "text": "Hôm nay bàn về quầy thu ngân."},
+        ],
+        "general",
+    )
     sections = content["domain"]["sections"]
     assert len(sections["topics"]) == 1
     assert sections["decisions"] == sections["actions"] == sections["requirements"] == []
@@ -256,7 +282,11 @@ def test_universal_failed_save_preserves_approved_version(tmp_path, monkeypatch)
     first = service.minutes.edit_domain_version(meeting_id, first, content)
     service.minutes.approve_version(meeting_id, first)
     approved = service.minutes.read_version(meeting_id, first)
-    monkeypatch.setattr(service.minutes, "save_version", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(
+        service.minutes,
+        "save_version",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
     with pytest.raises(OSError, match="disk full"):
         service.generate(meeting_id, meeting_type="general")
     assert service.minutes.read_version(meeting_id, first) == approved

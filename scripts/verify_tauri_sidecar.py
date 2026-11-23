@@ -137,7 +137,9 @@ def verify(*, offline_only: bool = False) -> dict:
                     meeting
                 ]
                 offline = sidecar.result(
-                    "minutes.generateOffline", meetingId=meeting, runId=None,
+                    "minutes.generateOffline",
+                    meetingId=meeting,
+                    runId=None,
                     meetingType="general",
                 )
                 active_version = offline["versionId"]
@@ -146,14 +148,17 @@ def verify(*, offline_only: bool = False) -> dict:
                 )["version"]
                 assert version["manifest"]["review_state"] == "unverified"
                 claims = [
-                    claim for items in version["content"]["domain"]["sections"].values()
+                    claim
+                    for items in version["content"]["domain"]["sections"].values()
                     for claim in items
                 ]
                 assert claims
                 confirmed = claims[0]
                 confirmed["review_status"] = "confirmed"
                 reviewed_id = sidecar.result(
-                    "minutes.editDomain", meetingId=meeting, versionId=offline["versionId"],
+                    "minutes.editDomain",
+                    meetingId=meeting,
+                    versionId=offline["versionId"],
                     content=version["content"],
                 )["versionId"]
                 rendered = sidecar.result(
@@ -223,8 +228,10 @@ def verify(*, offline_only: bool = False) -> dict:
                 )["saved"]
                 assert sidecar.result("export.audioInfo", meetingId=imported)["extension"] == "wav"
                 assert sidecar.result(
-                    "export.writeAudio", meetingId=imported,
-                    nativePath=str(audio_path), overwrite=False,
+                    "export.writeAudio",
+                    meetingId=imported,
+                    nativePath=str(audio_path),
+                    overwrite=False,
                 )["saved"]
                 assert "Thống nhất thử nghiệm" in minutes_path.read_text(encoding="utf-8")
                 with ZipFile(word_path) as word:

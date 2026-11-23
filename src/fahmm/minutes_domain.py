@@ -49,9 +49,18 @@ SECTIONS = frozenset(
         "partner_support",
     }
 )
-FORM_SECTIONS = frozenset({"dashboard_layout", "kpi_scope", "sqdcm_kpis", "color_alerts",
-                           "warehouse_model", "input_data", "project_actions",
-                           "partner_support"})
+FORM_SECTIONS = frozenset(
+    {
+        "dashboard_layout",
+        "kpi_scope",
+        "sqdcm_kpis",
+        "color_alerts",
+        "warehouse_model",
+        "input_data",
+        "project_actions",
+        "partner_support",
+    }
+)
 FORM_FIELDS = {"label", "method", "data_source", "open_point", "owner", "due_date"}
 SECTION_KINDS = {
     "requirements": frozenset(
@@ -149,7 +158,14 @@ def validate_domain_content(content: object) -> None:
         raise ValueError("Invalid minutes domain schema")
     if content["domain_schema_version"] != DOMAIN_SCHEMA_VERSION:
         raise ValueError("Unsupported minutes domain schema")
-    if set(content) - {"domain_schema_version", "domain", "user_text", "headings", "label", "format"}:
+    if set(content) - {
+        "domain_schema_version",
+        "domain",
+        "user_text",
+        "headings",
+        "label",
+        "format",
+    }:
         raise ValueError("Unknown minutes domain content field")
     if "format" in content and content["format"] != "denso_warehouse":
         raise ValueError("Invalid minutes format")

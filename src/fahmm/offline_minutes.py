@@ -89,8 +89,9 @@ def _chronological_topics(segments: list[dict], limit: int = 12) -> list[dict]:
         for segment in segments:
             index = min(int((segment["start"] - start) / width), limit - 1)
             windows[index].append(segment)
-        chosen = [candidate for window in windows if window
-                  for candidate in _topic_segments(window, 1)]
+        chosen = [
+            candidate for window in windows if window for candidate in _topic_segments(window, 1)
+        ]
     seen: set[str] = set()
     result = []
     for segment in chosen:
@@ -179,16 +180,25 @@ def extract_domain_minutes(
         return new_claim(segment["text"].strip(), "extractive", sources=[source], **fields)
 
     topics = _chronological_topics(usable) if universal else _topic_segments(usable, topic_limit)
-    summary = ([topics[0], topics[len(topics) // 2], topics[-1]] if universal and len(topics) >= 3
-               else topics[:3])
-    sections["summary"] = [cite(segment) for segment in {item["id"]: item for item in summary}.values()]
+    summary = (
+        [topics[0], topics[len(topics) // 2], topics[-1]]
+        if universal and len(topics) >= 3
+        else topics[:3]
+    )
+    sections["summary"] = [
+        cite(segment) for segment in {item["id"]: item for item in summary}.values()
+    ]
     sections["topics"] = [cite(segment) for segment in topics]
     for segment in usable:
         lower = segment["text"].casefold()
         if any(word in lower for word in QUESTION_WORDS):
             append("open_questions", cite(segment))
         if any(word in lower for word in RISK_WORDS):
-            kind = "blocker" if any(word in lower for word in ("blocker", "bị chặn", "vướng mắc")) else "risk"
+            kind = (
+                "blocker"
+                if any(word in lower for word in ("blocker", "bị chặn", "vướng mắc"))
+                else "risk"
+            )
             if "phụ thuộc" in lower:
                 kind = "dependency"
             append("risks_blockers", cite(segment, kind=kind))
@@ -218,11 +228,16 @@ def extract_domain_minutes(
         elif any(word in lower for word in ("đề xuất", "phương án", "alternative", "proposal")):
             append("proposed_solutions", cite(segment))
 
-        if meeting_type in ("general", "requirement_gathering") and any(
-            word in lower for word in ("yêu cầu", "hệ thống phải", "cần có", "requirement")
-        ) and not ("thu thập yêu cầu" in lower and not any(
-            phrase in lower for phrase in ("hệ thống phải", "cần có", "khách hàng yêu cầu")
-        )):
+        if (
+            meeting_type in ("general", "requirement_gathering")
+            and any(word in lower for word in ("yêu cầu", "hệ thống phải", "cần có", "requirement"))
+            and not (
+                "thu thập yêu cầu" in lower
+                and not any(
+                    phrase in lower for phrase in ("hệ thống phải", "cần có", "khách hàng yêu cầu")
+                )
+            )
+        ):
             kind = "business_rule" if "quy tắc" in lower else "functional"
             append("requirements", cite(segment, kind=kind, formality="candidate"))
         if meeting_type in ("general", "technical_discussion"):
@@ -280,9 +295,18 @@ def extract_domain_minutes(
             if kind:
                 append("uat_observations", cite(segment, kind=kind, acceptance_status="pending"))
     if universal:
-        for section in ("summary", "topics", "requirements", "decisions", "proposed_solutions",
-                        "open_questions", "risks_blockers", "actions", "next_steps",
-                        "technical_considerations"):
+        for section in (
+            "summary",
+            "topics",
+            "requirements",
+            "decisions",
+            "proposed_solutions",
+            "open_questions",
+            "risks_blockers",
+            "actions",
+            "next_steps",
+            "technical_considerations",
+        ):
             sections.setdefault(section, [])
     return content
 

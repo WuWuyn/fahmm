@@ -64,7 +64,9 @@ def render_minutes(content: dict) -> str:
         parts.append(f"\n## {headings.get(key, fallback)}")
         for item in content.get(key, []):
             if key == "actions":
-                line = f"{item['task']} · Người phụ trách: {item['owner']} · Hạn: {item['due_date']}"
+                line = (
+                    f"{item['task']} · Người phụ trách: {item['owner']} · Hạn: {item['due_date']}"
+                )
             else:
                 line = item["text"]
             parts.append(f"- {line}")
@@ -113,9 +115,11 @@ def _render_denso_minutes(content: dict) -> str:
         return [item for item in sections.get(name, []) if item["review_status"] != "rejected"]
 
     def table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
-        return ["| " + " | ".join(headers) + " |",
-                "| " + " | ".join("---" for _ in headers) + " |",
-                *("| " + " | ".join(cell(part) for part in row) + " |" for row in rows)]
+        return [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+            *("| " + " | ".join(cell(part) for part in row) + " |" for row in rows),
+        ]
 
     def two_columns(name: str, headers: tuple[str, str]) -> list[str]:
         rows = [(item["label"], item["text"]) for item in items(name)]
@@ -123,65 +127,144 @@ def _render_denso_minutes(content: dict) -> str:
 
     title = value("title")
     summary = items("summary")
-    lines = ["# MEETING MINUTES", title, f"Dự án/khách hàng: {value('project_customer')}", "",
-             *table(("Ngày họp", "Phạm vi", "Trạng thái"), [
-                 (value("meeting_datetime"), value("objective"), "Dự thảo để các bên xác nhận")]),
-             "", "## 1. Thông tin cuộc họp",
-             *table(("Hạng mục", "Nội dung"), [
-                 ("Tên cuộc họp", title), ("Thời gian", value("meeting_datetime")),
-                 ("Địa điểm", "Chưa rõ"), ("Mục tiêu", value("objective"))]),
-             "", "### 1.1. Thành phần tham gia",
-             *table(("Nhóm tham gia", "Ghi nhận"), [("Thành phần tham gia", value("participants"))]),
-             "", "## 2. Tóm tắt điều hành",
-             cell(summary[0]["text"]) if summary else "Chưa có thông tin trong bản phiên âm."]
+    lines = [
+        "# MEETING MINUTES",
+        title,
+        f"Dự án/khách hàng: {value('project_customer')}",
+        "",
+        *table(
+            ("Ngày họp", "Phạm vi", "Trạng thái"),
+            [(value("meeting_datetime"), value("objective"), "Dự thảo để các bên xác nhận")],
+        ),
+        "",
+        "## 1. Thông tin cuộc họp",
+        *table(
+            ("Hạng mục", "Nội dung"),
+            [
+                ("Tên cuộc họp", title),
+                ("Thời gian", value("meeting_datetime")),
+                ("Địa điểm", "Chưa rõ"),
+                ("Mục tiêu", value("objective")),
+            ],
+        ),
+        "",
+        "### 1.1. Thành phần tham gia",
+        *table(("Nhóm tham gia", "Ghi nhận"), [("Thành phần tham gia", value("participants"))]),
+        "",
+        "## 2. Tóm tắt điều hành",
+        cell(summary[0]["text"]) if summary else "Chưa có thông tin trong bản phiên âm.",
+    ]
     overview = []
-    for key, label in (("dashboard_layout", "Dashboard tổng quan"),
-                       ("kpi_scope", "Phạm vi KPI"), ("sqdcm_kpis", "KPI SQDCM"),
-                       ("color_alerts", "Cảnh báo màu"),
-                       ("warehouse_model", "Mô hình 3D"), ("input_data", "Dữ liệu đầu vào"),
-                       ("project_actions", "Công việc nhóm dự án"),
-                       ("partner_support", "Đề nghị hỗ trợ")):
-        overview.extend((f"{label} — {item['label']}" if item['label'] != "Chưa rõ" else label,
-                         item["text"]) for item in items(key))
-    lines.extend(["", *table(("Hạng mục", "Điều chỉnh thống nhất"),
-                              overview or [("Chưa rõ", "Chưa có thông tin trong bản phiên âm.")])])
+    for key, label in (
+        ("dashboard_layout", "Dashboard tổng quan"),
+        ("kpi_scope", "Phạm vi KPI"),
+        ("sqdcm_kpis", "KPI SQDCM"),
+        ("color_alerts", "Cảnh báo màu"),
+        ("warehouse_model", "Mô hình 3D"),
+        ("input_data", "Dữ liệu đầu vào"),
+        ("project_actions", "Công việc nhóm dự án"),
+        ("partner_support", "Đề nghị hỗ trợ"),
+    ):
+        overview.extend(
+            (f"{label} — {item['label']}" if item["label"] != "Chưa rõ" else label, item["text"])
+            for item in items(key)
+        )
+    lines.extend(
+        [
+            "",
+            *table(
+                ("Hạng mục", "Điều chỉnh thống nhất"),
+                overview or [("Chưa rõ", "Chưa có thông tin trong bản phiên âm.")],
+            ),
+        ]
+    )
     decisions = items("decisions")
-    lines.extend(["", "Kết luận ghi nhận: " + (cell(decisions[0]["text"]) if decisions else
-                  "Chưa có kết luận được xác nhận trong bản phiên âm."),
-                  "", "## 3. Bố cục Dashboard tổng quan và hiển thị 3D",
-                  *two_columns("dashboard_layout", ("Hạng mục", "Nội dung thống nhất")),
-                  "", "## 4. Chỉ số KPI SQDCM và cơ chế cảnh báo màu",
-                  "### 4.1. Phạm vi số liệu",
-                  *two_columns("kpi_scope", ("Hạng mục", "Nội dung"))])
-    kpis = [(item["label"], item["text"], item["method"], item["data_source"],
-             item["open_point"]) for item in items("sqdcm_kpis")]
+    lines.extend(
+        [
+            "",
+            "Kết luận ghi nhận: "
+            + (
+                cell(decisions[0]["text"])
+                if decisions
+                else "Chưa có kết luận được xác nhận trong bản phiên âm."
+            ),
+            "",
+            "## 3. Bố cục Dashboard tổng quan và hiển thị 3D",
+            *two_columns("dashboard_layout", ("Hạng mục", "Nội dung thống nhất")),
+            "",
+            "## 4. Chỉ số KPI SQDCM và cơ chế cảnh báo màu",
+            "### 4.1. Phạm vi số liệu",
+            *two_columns("kpi_scope", ("Hạng mục", "Nội dung")),
+        ]
+    )
+    kpis = [
+        (item["label"], item["text"], item["method"], item["data_source"], item["open_point"])
+        for item in items("sqdcm_kpis")
+    ]
     if kpis:
-        lines.extend(["", "### 4.2. Nhóm chỉ số SQDCM",
-                      *table(("Nhóm", "Thông tin cần theo dõi", "Cách tính / hiển thị",
-                              "Nguồn dữ liệu", "Cần xác nhận"), kpis)])
-    lines.extend(["", "### 4.3. Cơ chế cảnh báo màu sắc",
-                  *two_columns("color_alerts", ("Hạng mục", "Nội dung thống nhất")),
-                  "", "## 5. Mô hình 3D hiện trường và dữ liệu đầu vào",
-                  "### 5.1. Góp ý điều chỉnh layout 3D",
-                  *two_columns("warehouse_model", ("Hạng mục", "Điều chỉnh thống nhất")),
-                  "", "### 5.2. Chuẩn hóa kích thước và dữ liệu đầu vào",
-                  *two_columns("input_data", ("Hạng mục", "Dữ liệu cần chuẩn hóa")),
-                  "", "## 6. Công việc phía nhóm dự án FPT triển khai"])
+        lines.extend(
+            [
+                "",
+                "### 4.2. Nhóm chỉ số SQDCM",
+                *table(
+                    (
+                        "Nhóm",
+                        "Thông tin cần theo dõi",
+                        "Cách tính / hiển thị",
+                        "Nguồn dữ liệu",
+                        "Cần xác nhận",
+                    ),
+                    kpis,
+                ),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "### 4.3. Cơ chế cảnh báo màu sắc",
+            *two_columns("color_alerts", ("Hạng mục", "Nội dung thống nhất")),
+            "",
+            "## 5. Mô hình 3D hiện trường và dữ liệu đầu vào",
+            "### 5.1. Góp ý điều chỉnh layout 3D",
+            *two_columns("warehouse_model", ("Hạng mục", "Điều chỉnh thống nhất")),
+            "",
+            "### 5.2. Chuẩn hóa kích thước và dữ liệu đầu vào",
+            *two_columns("input_data", ("Hạng mục", "Dữ liệu cần chuẩn hóa")),
+            "",
+            "## 6. Công việc phía nhóm dự án FPT triển khai",
+        ]
+    )
     actions = []
     for item in items("project_actions"):
         owner = item["owner"]
         task = item["text"] + (f" — Phụ trách: {owner}" if owner != "Chưa rõ" else "")
         actions.append((task, item["due_date"]))
-    lines.extend(table(("Công việc cụ thể", "Thời hạn"),
-                       actions or [("Chưa có thông tin trong bản phiên âm.", "Chưa rõ")]))
-    lines.extend(["", "## 7. Đề nghị phía DENSO hỗ trợ",
-                  *table(("Nội dung nhờ hỗ trợ",),
-                         [(item["text"],) for item in items("partner_support")]
-                         or [("Chưa có thông tin trong bản phiên âm.",)])])
+    lines.extend(
+        table(
+            ("Công việc cụ thể", "Thời hạn"),
+            actions or [("Chưa có thông tin trong bản phiên âm.", "Chưa rõ")],
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "## 7. Đề nghị phía DENSO hỗ trợ",
+            *table(
+                ("Nội dung nhờ hỗ trợ",),
+                [(item["text"],) for item in items("partner_support")]
+                or [("Chưa có thông tin trong bản phiên âm.",)],
+            ),
+        ]
+    )
     next_steps = items("next_steps")
     if next_steps:
-        lines.extend(["", "## 8. Công việc tiếp theo",
-                      *table(("Công việc tiếp theo",), [(item["text"],) for item in next_steps])])
+        lines.extend(
+            [
+                "",
+                "## 8. Công việc tiếp theo",
+                *table(("Công việc tiếp theo",), [(item["text"],) for item in next_steps]),
+            ]
+        )
     lines.extend(["", "— HẾT —"])
     return "\n".join(lines)
 
@@ -202,9 +285,18 @@ def _render_domain_minutes(content: dict) -> str:
         f"Người tham dự: {participants}",
         f"Mục tiêu: {value('objective') or 'Chưa rõ'}",
     ]
-    universal_sections = {"summary", "topics", "requirements", "decisions", "proposed_solutions",
-                          "open_questions", "risks_blockers", "actions", "next_steps",
-                          "technical_considerations"}
+    universal_sections = {
+        "summary",
+        "topics",
+        "requirements",
+        "decisions",
+        "proposed_solutions",
+        "open_questions",
+        "risks_blockers",
+        "actions",
+        "next_steps",
+        "technical_considerations",
+    }
     for key, heading in DOMAIN_HEADINGS.items():
         if domain["meeting_type"] == "general" and key not in universal_sections:
             continue
@@ -218,13 +310,21 @@ def _render_domain_minutes(content: dict) -> str:
             lines.append("Chưa có thông tin trong bản phiên âm.")
             continue
         if key in {"actions", "next_steps"}:
+
             def table_cell(value: str) -> str:
                 return " ".join(value.replace("|", "/").split())
 
             if key == "actions":
                 lines.extend(("| Công việc | Người phụ trách | Thời hạn |", "| --- | --- | --- |"))
-                lines.extend("| " + " | ".join(table_cell(str(value)) for value in
-                             (item["text"], item["owner"], item["due_date"])) + " |" for item in items)
+                lines.extend(
+                    "| "
+                    + " | ".join(
+                        table_cell(str(value))
+                        for value in (item["text"], item["owner"], item["due_date"])
+                    )
+                    + " |"
+                    for item in items
+                )
             else:
                 lines.extend(("| Công việc tiếp theo |", "| --- |"))
                 lines.extend(f"| {table_cell(item['text'])} |" for item in items)
@@ -233,8 +333,8 @@ def _render_domain_minutes(content: dict) -> str:
             line = f"- {item['text']}"
             if key == "actions":
                 details = [
-                    f"Người phụ trách: {item['owner']}" if item['owner'] != "Chưa rõ" else "",
-                    f"Hạn: {item['due_date']}" if item['due_date'] != "Chưa rõ" else "",
+                    f"Người phụ trách: {item['owner']}" if item["owner"] != "Chưa rõ" else "",
+                    f"Hạn: {item['due_date']}" if item["due_date"] != "Chưa rõ" else "",
                 ]
                 if any(details):
                     line += " — " + " · ".join(detail for detail in details if detail)
@@ -287,7 +387,9 @@ class MeetingExportService:
             temporary.unlink(missing_ok=True)
         return target
 
-    def _write_text(self, destination: Path | None, content: str, *, overwrite: bool) -> Path | None:
+    def _write_text(
+        self, destination: Path | None, content: str, *, overwrite: bool
+    ) -> Path | None:
         return self._write_bytes(destination, content.encode("utf-8"), overwrite=overwrite)
 
     def export_minutes(
@@ -307,7 +409,8 @@ class MeetingExportService:
         if Path(destination).suffix.lower() != ".docx":
             raise ValueError("Choose a .docx export destination")
         return self._write_bytes(
-            destination, render_docx(self.minutes_markdown(meeting_id, version_id)),
+            destination,
+            render_docx(self.minutes_markdown(meeting_id, version_id)),
             overwrite=overwrite,
         )
 

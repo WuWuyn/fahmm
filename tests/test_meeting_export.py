@@ -22,7 +22,9 @@ from fahmm.transcripts import TranscriptStore
 def test_word_renderer_preserves_form_tables():
     from io import BytesIO
 
-    document = render_docx("# MEETING MINUTES\n\n| Hạng mục | Nội dung |\n| --- | --- |\n| Mục tiêu | Review demo |")
+    document = render_docx(
+        "# MEETING MINUTES\n\n| Hạng mục | Nội dung |\n| --- | --- |\n| Mục tiêu | Review demo |"
+    )
     with ZipFile(BytesIO(document)) as archive:
         root = ET.fromstring(archive.read("word/document.xml"))
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -30,7 +32,10 @@ def test_word_renderer_preserves_form_tables():
     assert table is not None
     assert len(table.findall("w:tr", ns)) == 2
     assert [node.text for node in table.findall(".//w:t", ns)] == [
-        "Hạng mục", "Nội dung", "Mục tiêu", "Review demo"
+        "Hạng mục",
+        "Nội dung",
+        "Mục tiêu",
+        "Review demo",
     ]
 
 
@@ -71,11 +76,15 @@ def test_word_export_uses_selected_saved_version_without_review_notice(tmp_path)
     assert service.export_minutes_docx(meeting_id, newer, destination) == destination
     with ZipFile(destination) as archive:
         assert archive.testzip() is None
-        assert {"[Content_Types].xml", "_rels/.rels", "word/document.xml",
-                "word/styles.xml", "word/_rels/document.xml.rels"} <= set(archive.namelist())
+        assert {
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "word/document.xml",
+            "word/styles.xml",
+            "word/_rels/document.xml.rels",
+        } <= set(archive.namelist())
         root = ET.fromstring(archive.read("word/document.xml"))
-    text = "\n".join(node.text or "" for node in root.iter()
-                     if node.tag.endswith("}t"))
+    text = "\n".join(node.text or "" for node in root.iter() if node.tag.endswith("}t"))
     assert "Bản mới" in text
     assert "Đã thống nhất thử nghiệm." not in text
     assert "Review state:" not in text
@@ -133,10 +142,16 @@ def test_edited_minutes_omit_saved_timestamp_notes_and_export_appendix(tmp_path)
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     versions = MinutesStore(meetings)
     content = sample_content(run_id)
-    clean = ("# Biên bản đã sửa\r\nQuyết định cần kiểm tra lại.\r\n"
-             "| Hẹn kiểm tra lúc 09:30 (Nguồn: báo cáo kho) | Mai |\r\n- Gửi báo cáo.")
-    content["user_text"] = clean.replace("lại.", "lại. (Nguồn: 00:00:19.8, 00:01:16.4)").replace(
-        "kho) |", "kho) (Nguồn: 01:05:07.4) |") + " [0.0s]"
+    clean = (
+        "# Biên bản đã sửa\r\nQuyết định cần kiểm tra lại.\r\n"
+        "| Hẹn kiểm tra lúc 09:30 (Nguồn: báo cáo kho) | Mai |\r\n- Gửi báo cáo."
+    )
+    content["user_text"] = (
+        clean.replace("lại.", "lại. (Nguồn: 00:00:19.8, 00:01:16.4)").replace(
+            "kho) |", "kho) (Nguồn: 01:05:07.4) |"
+        )
+        + " [0.0s]"
+    )
     first = versions.save_version(
         meeting_id, run_id, "extractive", sample_content(run_id), "default"
     )
@@ -147,10 +162,7 @@ def test_edited_minutes_omit_saved_timestamp_notes_and_export_appendix(tmp_path)
     assert saved["user_text"] == content["user_text"]
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
     assert clean in markdown
-    assert (
-        "> Generation: Edited from locally extracted minutes."
-        in markdown
-    )
+    assert "> Generation: Edited from locally extracted minutes." in markdown
     assert "## Source references" not in markdown
     assert "00:00:00.0–00:00:02.0" not in markdown
 
@@ -169,10 +181,7 @@ def test_offline_draft_edit_and_export_preserve_provenance_and_action_caveat(tmp
     manifest = versions.read_version(meeting_id, edited)["manifest"]
     assert manifest["parent_version_id"] == first
     assert manifest["source_origin"] == "extractive"
-    assert (
-        "> Generation: Edited from locally extracted minutes."
-        in exported
-    )
+    assert "> Generation: Edited from locally extracted minutes." in exported
     assert (
         "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
         in exported
@@ -188,10 +197,7 @@ def test_provider_edited_export_labels_origin_and_action_caveat_without_actions(
     content["user_text"] = "# Revised minutes without actions"
     edited = versions.edit_version(meeting_id, first, content)
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
-    assert (
-        "> Generation: Edited from provider-generated minutes."
-        in markdown
-    )
+    assert "> Generation: Edited from provider-generated minutes." in markdown
     assert (
         "> Any action items in these minutes are suggestions, not assigned or tracked tasks."
         in markdown
@@ -225,7 +231,9 @@ def test_transcript_export_uses_selected_working_run(tmp_path):
     assert service.transcript_plain_text(meeting_id, earlier) == "Đã sửa bản ghi trước.\n"
     assert service.transcript_plain_text(meeting_id, later) == "Nội dung mới.\n"
     plain_destination = tmp_path / "transcript-plain.txt"
-    assert service.export_transcript_plain(meeting_id, later, plain_destination) == plain_destination
+    assert (
+        service.export_transcript_plain(meeting_id, later, plain_destination) == plain_destination
+    )
     assert plain_destination.read_text(encoding="utf-8") == "Nội dung mới.\n"
 
 
@@ -237,7 +245,8 @@ def test_audio_export_copies_original_format_without_modifying_source(tmp_path):
     meetings.update_metadata(meeting_id, state="completed", audio_file=source.name)
     service = MeetingExportService(meetings)
     assert service.audio_info(meeting_id) == {
-        "fileName": "recording.mp3", "extension": "mp3",
+        "fileName": "recording.mp3",
+        "extension": "mp3",
     }
     destination = tmp_path / "meeting.mp3"
     assert service.export_audio(meeting_id, None) is None
@@ -352,7 +361,10 @@ def test_domain_preview_and_export_use_same_saved_claims_and_freeform_text(tmp_p
 def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sources(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
     source = {
-        "run_id": run_id, "segment_id": 1, "start": 0.0, "end": 2.0,
+        "run_id": run_id,
+        "segment_id": 1,
+        "start": 0.0,
+        "end": 2.0,
         "excerpt": "Đã thống nhất thử nghiệm.",
     }
     content = new_domain_content("general", title="Biên bản")
@@ -360,14 +372,22 @@ def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sourc
     summary["review_status"] = "confirmed"
     pending = new_claim("Cần kiểm tra thêm.", "extractive", sources=[source])
     action = new_claim(
-        "Gửi tài liệu cho khách hàng.", "extractive", sources=[source],
-        owner="Mai", due_date="2026-11-20", confirmation_status="reviewed",
+        "Gửi tài liệu cho khách hàng.",
+        "extractive",
+        sources=[source],
+        owner="Mai",
+        due_date="2026-11-20",
+        confirmation_status="reviewed",
     )
     action["review_status"] = "confirmed"
     content["domain"]["sections"] = {
-        "summary": [summary], "topics": [pending], "actions": [action],
+        "summary": [summary],
+        "topics": [pending],
+        "actions": [action],
     }
-    version = MinutesStore(meetings).save_version(meeting_id, run_id, "extractive", content, "default")
+    version = MinutesStore(meetings).save_version(
+        meeting_id, run_id, "extractive", content, "default"
+    )
     saved = MinutesStore(meetings).read_version(meeting_id, version)["content"]
     preview = render_minutes(saved)
     assert "- Đã thống nhất thử nghiệm.\n" in preview
@@ -383,12 +403,24 @@ def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sourc
 def test_denso_overview_lists_all_categories_before_details_and_tables_next_steps():
     content = new_domain_content("general", title="Biên bản")
     content["format"] = "denso_warehouse"
+
     def form_claim(label, text):
-        return new_claim(text, "user", label=label, method="Chưa rõ", data_source="Chưa rõ",
-                         open_point="Chưa rõ", owner="Chưa rõ", due_date="Chưa rõ")
+        return new_claim(
+            text,
+            "user",
+            label=label,
+            method="Chưa rõ",
+            data_source="Chưa rõ",
+            open_point="Chưa rõ",
+            owner="Chưa rõ",
+            due_date="Chưa rõ",
+        )
+
     sections = content["domain"]["sections"]
-    sections["dashboard_layout"] = [form_claim("Màn hình", "Điều chỉnh bố cục."),
-                                    form_claim("Bộ lọc", "Thêm bộ lọc.")]
+    sections["dashboard_layout"] = [
+        form_claim("Màn hình", "Điều chỉnh bố cục."),
+        form_claim("Bộ lọc", "Thêm bộ lọc."),
+    ]
     sections["sqdcm_kpis"] = [form_claim("Q", "Theo dõi chất lượng.")]
     sections["project_actions"] = [form_claim("Kiểm thử", "Thực hiện kiểm thử.")]
     sections["next_steps"] = [new_claim("Gửi tài liệu.", "user")]
