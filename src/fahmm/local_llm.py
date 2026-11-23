@@ -135,6 +135,7 @@ class OllamaClient:
                             {"role": "user", "content": prompt},
                         ],
                         "stream": True,
+                        "think": False,
                         "format": schema,
                         "options": {
                             "temperature": 0,

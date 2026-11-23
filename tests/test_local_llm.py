@@ -244,6 +244,7 @@ def test_truncated_form_json_retries_with_more_output_without_losing_items(monke
     assert OllamaClient().generate(DEFAULT_MODEL, "Nguồn hư cấu", form=True)["items"] == []
     assert [request["format"]["properties"]["items"]["maxItems"] for request in requests] == [8, 8]
     assert [request["options"]["num_predict"] for request in requests] == [2200, 3500]
+    assert all(request["think"] is False for request in requests)
 
 
 def test_invalid_summary_is_retried_before_failing(tmp_path):
@@ -290,6 +291,7 @@ def test_truncated_summary_json_retries_with_more_output_tokens(monkeypatch):
     monkeypatch.setattr(OllamaClient, "_request", fake_request)
     assert OllamaClient().generate(DEFAULT_MODEL, "Nguồn hư cấu")["source_ids"] == [1]
     assert [request["options"]["num_predict"] for request in requests] == [350, 700]
+    assert all(request["think"] is False for request in requests)
 
 
 def test_two_truncated_responses_signal_a_splittable_output_limit(monkeypatch):
