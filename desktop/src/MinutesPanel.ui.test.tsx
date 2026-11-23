@@ -20,10 +20,11 @@ let generationGate: Promise<void> | null;
 let sourceDriftError: boolean;
 let versionReadError: boolean;
 let localAIReady: boolean;
+let localAIError: boolean;
 beforeEach(() => {
   versionId = null; previewCount = 0; minutesOrigin = "extractive"; sourceOrigin = "extractive";
   domainMode = false; extraVersionId = null; activeTranscript = [{ id: 1, start: 0, end: 1, text: "Xin chào" }];
-  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false; localAIReady = false;
+  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false; localAIReady = false; localAIError = false;
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
       case "minutes.list": return { versions: [versionId, extraVersionId].filter(Boolean).map((id) => ({ version_id: id, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin })), activeVersionId: versionId };
@@ -51,7 +52,9 @@ beforeEach(() => {
       case "llm.availability": return { connected: localAIReady, models: localAIReady ? ["qwen3:4b-instruct"] : [],
         selectedModel: "qwen3:4b-instruct", ready: localAIReady };
       case "minutes.generateLocalStart": return { started: true };
-      case "minutes.localStatus": versionId = "l".repeat(32); minutesOrigin = "local_llm";
+      case "minutes.localStatus":
+        if (localAIError) return { state: "failed", progress: 0, error: "Model failed", versionId: null };
+        versionId = "l".repeat(32); minutesOrigin = "local_llm";
         return { state: "completed", progress: 1, error: null, versionId };
       case "transcript.list": return { activeRunId: activeTranscript ? "r".repeat(32) : null };
       case "transcript.read": return { run: { working: activeTranscript } };
@@ -114,12 +117,76 @@ it("uses installed local AI for the one-click minutes action and labels its orig
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
 });
 
+it("creates a source-linked extractive draft when local AI is available", async () => {
+  localAIReady = true;
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Create fast extractive draft" }));
+  expect(await screen.findByText("Extracted locally from the transcript; not a semantic AI summary.")).toBeTruthy();
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
+    operation === "minutes.generateOffline" && params?.meetingType === "general")).toBe(true);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateLocalStart")).toBe(false);
+});
+
+it("keeps local AI errors visible without silently falling back", async () => {
+  localAIReady = true; localAIError = true;
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByRole("button", { name: "Create fast extractive draft" });
+  await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
+  expect((await screen.findByRole("alert", {}, { timeout: 3000 })).textContent).toContain("Model failed");
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Create fast extractive draft" }));
+  expect(await screen.findByText("Extracted locally from the transcript; not a semantic AI summary.")).toBeTruthy();
+});
+
+it("disables the extractive action for blank text and while a draft is running", async () => {
+  localAIReady = true;
+  activeTranscript = [{ id: 1, start: 0, end: 1, text: " " }];
+  const { unmount } = render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  expect(await screen.findByRole("button", { name: "Create fast extractive draft" })).toHaveProperty("disabled", true);
+  unmount();
+  activeTranscript = [{ id: 1, start: 0, end: 1, text: "Xin chào" }];
+  let release!: () => void;
+  generationGate = new Promise<void>((resolve) => { release = resolve; });
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  const fast = await screen.findByRole("button", { name: "Create fast extractive draft" });
+  await user.click(fast);
+  expect(fast).toHaveProperty("disabled", true);
+  release();
+  await screen.findByText("Extracted locally from the transcript; not a semantic AI summary.");
+});
+
+it("preserves unsaved edits when the fast draft confirmation is declined", async () => {
+  localAIReady = true; versionId = "m".repeat(32);
+  const user = userEvent.setup();
+  vi.stubGlobal("confirm", vi.fn(() => false));
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), " Unsaved");
+  await user.click(await screen.findByRole("button", { name: "Create fast extractive draft" }));
+  expect((screen.getByRole("textbox", { name: "Edit minutes Markdown" }) as HTMLTextAreaElement).value).toContain("Unsaved");
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
+});
+
+it("reports extractive failures accurately even when local AI is installed", async () => {
+  localAIReady = true; generationError = true;
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Create fast extractive draft" }));
+  expect(await screen.findByText("Could not create meeting minutes. Check the saved transcript and try again.")).toBeTruthy();
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateLocalStart")).toBe(false);
+});
+
 it("shows the one-click minutes controls in Vietnamese without review status", async () => {
   versionId = "m".repeat(32);
+  localAIReady = true;
   useUIStore.setState({ language: "vi" });
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
   expect(await screen.findByRole("heading", { name: "Tạo biên bản" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Tạo biên bản" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Tạo biên bản trích xuất nhanh" })).toBeTruthy();
   await waitFor(() => expect(screen.getByRole("article").textContent).toContain("Bản nháp"));
   expect(screen.queryByText("Chưa xác minh")).toBeNull();
 });

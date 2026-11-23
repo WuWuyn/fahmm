@@ -127,17 +127,18 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       .catch(() => { /* Source comparison is optional for viewing minutes. */ });
     return () => { alive = false; };
   }, [meetingId, selectedVersion]);
-  async function generateOffline(type = "general") {
+  async function generateOffline(type = "general", mode: "auto" | "extractive" = "auto") {
     if (generating.current || !segments.some((segment) => segment.text.trim())) return;
     if (dirty && !window.confirm(t("Discard unsaved minutes edits before generating a new version?"))) return;
+    const useLocalAI = mode === "auto" && localAI?.ready === true;
     generating.current = true;
     setBusy(true); setMessage("");
-    setGenerationNotice({ kind: "info", text: localAI?.ready
+    setGenerationNotice({ kind: "info", text: useLocalAI
       ? "Local AI is writing the DENSO form on this device…"
       : "Generating meeting minutes on this device…" });
     try {
       let data: { versionId: string };
-      if (localAI?.ready) {
+      if (useLocalAI) {
         await bridgeCall("minutes.generateLocalStart", { meetingId, meetingType: type });
         let job: LocalJob;
         do {
@@ -154,7 +155,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       setGenerationNotice({ kind: "info", text: "Minutes saved. Opening the new version…" });
       try { await refresh(); }
       catch { setGenerationNotice({ kind: "error", text: "Minutes saved, but the list could not refresh. Reopen this meeting to view them." }); }
-    } catch (error) { setGenerationNotice({ kind: "error", text: localAI?.ready
+    } catch (error) { setGenerationNotice({ kind: "error", text: useLocalAI
       ? `Local AI could not create minutes: ${String(error)}`
       : "Could not create meeting minutes. Check the saved transcript and try again." }); }
     finally { generating.current = false; setBusy(false); setLocalProgress(null); }
@@ -280,6 +281,8 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
         <div className="minutes-create-controls">
           <Button size="sm" disabled={busy || !segments.some((segment) => segment.text.trim())}
             onClick={() => void generateOffline()}><Sparkles size={15} /> {t(busy ? "Creating minutes…" : "Generate meeting minutes")}</Button>
+          {localAI?.ready && <Button variant="secondary" size="sm" disabled={busy || !segments.some((segment) => segment.text.trim())}
+            onClick={() => void generateOffline(meetingType, "extractive")}>{t("Create fast extractive draft")}</Button>}
         </div></div>
       {!segments.some((segment) => segment.text.trim()) && <p className="hint" role="status">{t("Transcribe this recording and save nonempty text before creating minutes.")}</p>}
       {localAI && !localAI.ready && <p className="hint" role="status">{t(localAI.connected

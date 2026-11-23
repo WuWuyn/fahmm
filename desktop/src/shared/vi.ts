@@ -295,6 +295,7 @@ export const vi: Record<string, string> = {
   "Offline and source-linked. Each new draft starts unverified.": "Xử lý trên máy, có dẫn nguồn; bản mới luôn cần xem lại.",
   "Create offline draft": "Tạo bản nháp ngoại tuyến",
   "Generate meeting minutes": "Tạo biên bản",
+  "Create fast extractive draft": "Tạo biên bản trích xuất nhanh",
   "Creating minutes…": "Đang tạo biên bản…",
   "Create a source-linked, unverified draft locally from the full saved transcript.": "Tạo bản nháp có dẫn nguồn trên máy từ toàn bộ bản phiên âm đã lưu. Bản nháp cần được kiểm tra.",
   "Transcribe this recording and save nonempty text before creating minutes.": "Hãy phiên âm bản ghi và lưu nội dung trước khi tạo biên bản.",
