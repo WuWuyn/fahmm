@@ -218,6 +218,16 @@ def test_universal_hour_draft_covers_meeting_and_preserves_uncertainty():
             assert (source["start"], source["end"]) == (segment["start"], segment["end"])
 
 
+def test_requirement_draft_keeps_questions_out_of_actions_and_includes_risks():
+    segments = json.loads((Path(__file__).parent / "fixtures" / "one_click_minutes_hour.json").read_text(encoding="utf-8"))
+    sections = extract_domain_minutes({}, "a" * 32, segments, "requirement_gathering")["domain"]["sections"]
+    assert [item["sources"][0]["segment_id"] for item in sections["actions"]] == [9]
+    assert {item["sources"][0]["segment_id"] for item in sections["open_questions"]} == {3, 12}
+    assert {item["sources"][0]["segment_id"] for item in sections["risks_blockers"]} == {5, 10}
+    assert [item["sources"][0]["segment_id"] for item in sections["next_steps"]] == [11]
+    assert {item["sources"][0]["segment_id"] for item in sections["requirements"]} == {2, 6}
+
+
 def test_universal_draft_deduplicates_and_keeps_empty_sections():
     content = extract_domain_minutes({}, "a" * 32, [
         {"id": 1, "start": 0, "end": 1, "text": "  Hôm nay bàn về quầy thu ngân.  "},

@@ -53,7 +53,7 @@ async fn bridge_import_demo(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 fn webview_operation_allowed(operation: &str) -> bool {
-    !matches!(operation, "meeting.import" | "export.writeMinutes" | "export.writeMinutesDocx" | "export.writeTranscript" | "export.writeTranscriptPlain" | "export.writeAudio" | "media.resolve")
+    !matches!(operation, "meeting.import" | "report.addFile" | "report.export" | "export.writeMinutes" | "export.writeMinutesDocx" | "export.writeTranscript" | "export.writeTranscriptPlain" | "export.writeAudio" | "media.resolve")
 }
 
 #[tauri::command]
@@ -72,6 +72,8 @@ mod host_tests {
     #[test]
     fn paths_require_native_dialog_commands() {
         assert!(!webview_operation_allowed("meeting.import"));
+        assert!(!webview_operation_allowed("report.addFile"));
+        assert!(!webview_operation_allowed("report.export"));
         assert!(!webview_operation_allowed("export.writeMinutes"));
         assert!(!webview_operation_allowed("export.writeMinutesDocx"));
         assert!(!webview_operation_allowed("export.writeTranscript"));
@@ -80,6 +82,30 @@ mod host_tests {
         assert!(!webview_operation_allowed("media.resolve"));
         assert!(webview_operation_allowed("meeting.list"));
     }
+}
+
+#[tauri::command]
+async fn bridge_report_import(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selection = app.dialog().file()
+            .add_filter("Report documents", &["pdf", "docx", "xlsx", "txt", "md"])
+            .blocking_pick_file();
+        let Some(selection) = selection else { return Ok(json!({"cancelled": true})) };
+        let path = selection.into_path().map_err(|_| "INVALID_REQUEST")?;
+        let path = path.to_str().ok_or("INVALID_REQUEST")?;
+        call_backend(&app, "report.addFile", json!({"nativePath": path}))
+    }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
+}
+
+#[tauri::command]
+async fn bridge_report_export(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selection = app.dialog().file().blocking_pick_folder();
+        let Some(selection) = selection else { return Ok(json!({"cancelled": true})) };
+        let path = selection.into_path().map_err(|_| "INVALID_REQUEST")?;
+        let path = path.to_str().ok_or("INVALID_REQUEST")?;
+        call_backend(&app, "report.export", json!({"nativePath": path}))
+    }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
 }
 
 #[tauri::command]
@@ -188,7 +214,7 @@ pub fn run() {
         .manage(BackendState(Mutex::new(backend)))
         .invoke_handler(tauri::generate_handler![bridge_status, bridge_restart,
             bridge_call, bridge_import, bridge_demo_status, bridge_import_demo, bridge_export,
-            bridge_export_audio])
+            bridge_export_audio, bridge_report_import, bridge_report_export])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

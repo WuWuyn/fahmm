@@ -39,8 +39,20 @@ SECTIONS = frozenset(
         "status_updates",
         "incident_findings",
         "uat_observations",
+        "dashboard_layout",
+        "kpi_scope",
+        "sqdcm_kpis",
+        "color_alerts",
+        "warehouse_model",
+        "input_data",
+        "project_actions",
+        "partner_support",
     }
 )
+FORM_SECTIONS = frozenset({"dashboard_layout", "kpi_scope", "sqdcm_kpis", "color_alerts",
+                           "warehouse_model", "input_data", "project_actions",
+                           "partner_support"})
+FORM_FIELDS = {"label", "method", "data_source", "open_point", "owner", "due_date"}
 SECTION_KINDS = {
     "requirements": frozenset(
         {
@@ -94,7 +106,7 @@ SECTION_KINDS = {
     ),
 }
 PROVENANCE = frozenset({"user_provided", "source_supported", "unknown"})
-CLAIM_ORIGINS = frozenset({"extractive", "provider", "user_provided"})
+CLAIM_ORIGINS = frozenset({"extractive", "local_llm", "provider", "user_provided"})
 REVIEW_STATES = frozenset({"needs_review", "confirmed", "rejected"})
 ID_RE = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -137,8 +149,10 @@ def validate_domain_content(content: object) -> None:
         raise ValueError("Invalid minutes domain schema")
     if content["domain_schema_version"] != DOMAIN_SCHEMA_VERSION:
         raise ValueError("Unsupported minutes domain schema")
-    if set(content) - {"domain_schema_version", "domain", "user_text", "headings", "label"}:
+    if set(content) - {"domain_schema_version", "domain", "user_text", "headings", "label", "format"}:
         raise ValueError("Unknown minutes domain content field")
+    if "format" in content and content["format"] != "denso_warehouse":
+        raise ValueError("Invalid minutes format")
     if "user_text" in content and not isinstance(content["user_text"], str):
         raise ValueError("Invalid minutes edited text")
     domain = content.get("domain")
@@ -195,6 +209,8 @@ def _validate_claim(section: str, item: object, item_ids: set[str]) -> None:
         "actions": {"owner", "due_date", "confirmation_status"},
         "uat_observations": {"kind", "acceptance_status"},
     }.get(section, {"kind"} if section in SECTION_KINDS else set())
+    if section in FORM_SECTIONS:
+        extra = FORM_FIELDS
     if set(item) != required | extra:
         raise ValueError(f"Invalid {section} claim fields")
     item_id = item["item_id"]
@@ -214,6 +230,10 @@ def _validate_claim(section: str, item: object, item_ids: set[str]) -> None:
         raise ValueError("Invalid minutes claim state")
     if item["origin"] != "user_provided" and not item["sources"]:
         raise ValueError("Generated minutes claim needs a source")
+    if section in FORM_SECTIONS and any(
+        not isinstance(item[key], str) or not item[key].strip() for key in FORM_FIELDS
+    ):
+        raise ValueError("Invalid form item field")
     if section in SECTION_KINDS and (
         not isinstance(item["kind"], str) or item["kind"] not in SECTION_KINDS[section]
     ):

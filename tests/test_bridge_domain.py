@@ -130,5 +130,7 @@ def test_one_click_bridge_to_saved_export_uses_working_transcript(tmp_path):
     rendered = call(app, "minutes.renderBody", meetingId=meeting_id, versionId=version_id)["markdown"]
     exported = call(app, "export.minutesMarkdown", meetingId=meeting_id, versionId=version_id)["markdown"]
     assert "VAT" in rendered and "VAT" in exported
-    assert "## Quyết định cần xác minh" in exported
-    assert "đoạn 12" in exported
+    assert "## Quyết định" in exported
+    assert "Cần xem lại" not in exported
+    assert "Review state:" not in exported
+    assert any(item["sources"] for items in sections.values() for item in items)

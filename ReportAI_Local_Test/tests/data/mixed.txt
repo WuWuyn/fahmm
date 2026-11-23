@@ -1,0 +1,1 @@
+Team đã completed UAT, tuy nhiên production deployment đang pending vì security review chưa approved. Người phụ trách: Lan. Deadline: 30/11/2026.

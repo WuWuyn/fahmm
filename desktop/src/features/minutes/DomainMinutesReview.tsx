@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCheck, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,11 +10,12 @@ import { useT } from "@/shared/i18n";
 export type DomainSource = { run_id: string; segment_id: number; start: number; end: number; excerpt: string };
 export type DomainClaim = { item_id: string; text: string; sources: DomainSource[]; origin: string;
   review_status: "needs_review" | "confirmed" | "rejected"; kind?: string; formality?: string;
-  owner?: string; due_date?: string; confirmation_status?: string; acceptance_status?: string };
+  owner?: string; due_date?: string; confirmation_status?: string; acceptance_status?: string;
+  label?: string; method?: string; data_source?: string; open_point?: string };
 export type DomainField = { value: string | string[] | null; provenance: string; sources: DomainSource[] };
 export type DomainContent = { domain_schema_version: 1; domain: {
   meeting_type: string; metadata: Record<string, DomainField>; sections: Record<string, DomainClaim[]>;
-}; user_text?: string };
+}; user_text?: string; format?: string };
 export type DriftEntry = { location: string; source: DomainSource; current_text: string | null; drifted: boolean };
 
 export const MEETING_TYPES = ["general", "requirement_gathering", "technical_discussion", "project_status", "issue_incident", "uat_feedback"];
@@ -23,7 +24,12 @@ const SECTION_LABELS: Record<string, string> = {
   proposed_solutions: "Proposed solutions", open_questions: "Open questions", risks_blockers: "Risks and blockers",
   actions: "Action suggestions", next_steps: "Next steps", technical_considerations: "Technical considerations",
   status_updates: "Status updates", incident_findings: "Incident findings", uat_observations: "UAT observations",
+  dashboard_layout: "Dashboard layout", kpi_scope: "KPI data scope", sqdcm_kpis: "SQDCM KPIs", color_alerts: "Color alerts",
+  warehouse_model: "Warehouse 3D model", input_data: "Input data",
+  project_actions: "Project team actions", partner_support: "Partner support",
 };
+const FORM_SECTIONS = ["dashboard_layout", "kpi_scope", "sqdcm_kpis", "color_alerts", "warehouse_model",
+  "input_data", "project_actions", "partner_support"];
 const COMMON_SECTIONS = ["summary", "topics", "decisions", "proposed_solutions", "open_questions", "risks_blockers", "actions", "next_steps"];
 const TYPE_SECTIONS: Record<string, string[]> = {
   general: ["requirements", "technical_considerations"], requirement_gathering: ["requirements"], technical_discussion: ["technical_considerations"],
@@ -46,10 +52,7 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
   const t = useT();
   const [draft, setDraft] = useState<DomainContent>(() => structuredClone(content));
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
-  const [bulkSaving, setBulkSaving] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(content);
-  const claims = Object.values(draft.domain.sections).flat();
-  const confirmedCount = claims.filter((claim) => claim.review_status === "confirmed").length;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const update = (mutate: (next: DomainContent) => void) => {
     setDraft((current) => { const next = structuredClone(current); mutate(next); return next; });
@@ -62,23 +65,15 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
     if (remaining.length) next.domain.sections[section] = remaining;
     else delete next.domain.sections[section];
   });
-  const sections = draft.domain.meeting_type === "general"
+  const sections = draft.format === "denso_warehouse"
+    ? ["summary", ...FORM_SECTIONS, "decisions"]
+    : draft.domain.meeting_type === "general"
     ? ["summary", "topics", "requirements", "decisions", "proposed_solutions", "actions",
       "open_questions", "risks_blockers", "next_steps", "technical_considerations"]
     : [...COMMON_SECTIONS, ...(TYPE_SECTIONS[draft.domain.meeting_type] || [])];
   const metadata = draft.domain.metadata;
-  const confirmAll = async () => {
-    if (busy || bulkSaving || confirmedCount === claims.length) return;
-    const next = structuredClone(draft);
-    for (const sectionClaims of Object.values(next.domain.sections)) {
-      for (const claim of sectionClaims) claim.review_status = "confirmed";
-    }
-    setBulkSaving(true);
-    try { await onSave(next); }
-    finally { setBulkSaving(false); }
-  };
   return <div className="domain-review">
-    <p className="hint">{t("Review each claim against its saved source. Internal approval is not customer sign-off.")}</p>
+    <p className="hint">{t("Edit meeting details and notes here. Saved audio sources remain available below each note.")}</p>
     {content.user_text !== undefined && <p className="hint">{t("This version displays freeform Markdown; claim edits will not change that body.")}</p>}
     <div className="domain-metadata">
       {(["title", "meeting_datetime", "project_customer", "participants", "objective"] as const).map((key) => {
@@ -97,11 +92,6 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
           <small>{t("Provenance")}: {t(field.provenance)}</small>
         </div>;
       })}
-    </div>
-    <div className="domain-bulk-review">
-      <span>{t("{confirmed} of {total} claims confirmed", { confirmed: confirmedCount, total: claims.length })}</span>
-      <Button variant="secondary" size="sm" disabled={busy || bulkSaving || confirmedCount === claims.length}
-        onClick={() => void confirmAll()}><CheckCheck size={15} />{t("Confirm all claims")}</Button>
     </div>
     {sections.map((section) => <div className="domain-section" key={section}>
       <div className="document-toolbar secondary"><h3>
@@ -126,6 +116,8 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
           if (KINDS[section]) claim.kind = KINDS[section][0];
           if (section === "requirements") claim.formality = "candidate";
           if (section === "actions") Object.assign(claim, { owner: "Chưa rõ", due_date: "Chưa rõ", confirmation_status: "suggested" });
+          if (FORM_SECTIONS.includes(section)) Object.assign(claim, { label: "Chưa rõ", method: "Chưa rõ",
+            data_source: "Chưa rõ", open_point: "Chưa rõ", owner: "Chưa rõ", due_date: "Chưa rõ" });
           if (section === "uat_observations") claim.acceptance_status = "pending";
           (next.domain.sections[section] ||= []).push(claim);
           });
@@ -138,11 +130,17 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
             onClick={() => removeClaim(section, claim.item_id)}><Trash2 size={14} />{t("Remove claim")}</Button></div>
         <Textarea id={`claim-${claim.item_id}`} value={claim.text} onChange={(event) => updateClaim(section, index,
           { text: event.target.value, origin: "user_provided", review_status: "needs_review" })} />
+        {FORM_SECTIONS.includes(section) && <div className="domain-claim-controls">
+          {(["label", "method", "data_source", "open_point", "owner", "due_date"] as const)
+            .filter((field) => field === "label" || (section === "sqdcm_kpis" && ["method", "data_source", "open_point"].includes(field))
+              || (section === "project_actions" && ["owner", "due_date"].includes(field)))
+            .map((field) => <Label key={field} htmlFor={`${field}-${claim.item_id}`}>{t(({ label: "Item label",
+              method: "Calculation / display", data_source: "Data source", open_point: "Needs confirmation",
+              owner: "Suggested owner", due_date: "Suggested deadline" })[field])}
+              <Input id={`${field}-${claim.item_id}`} value={claim[field] || "Chưa rõ"}
+                onChange={(event) => updateClaim(section, index, { [field]: event.target.value || "Chưa rõ",
+                  origin: "user_provided", review_status: "needs_review" })} /></Label>)}</div>}
         <div className="domain-claim-controls">
-          <Label htmlFor={`review-${claim.item_id}`}>{t("Review state")}<NativeSelect id={`review-${claim.item_id}`} value={claim.review_status} onChange={(event) => updateClaim(section, index,
-            { review_status: event.target.value as DomainClaim["review_status"] })}>
-            {["needs_review", "confirmed", "rejected"].map((status) => <option key={status} value={status}>{t(status)}</option>)}
-          </NativeSelect></Label>
           {claim.kind && <Label htmlFor={`kind-${claim.item_id}`}>{t("Classification")}<NativeSelect id={`kind-${claim.item_id}`} value={claim.kind} onChange={(event) => updateClaim(section, index,
             { kind: event.target.value, review_status: "needs_review" })}>
             {KINDS[section].map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}
@@ -172,8 +170,7 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
             {stale && <p role="alert">{t("Transcript changed since this draft")}: {current.current_text ?? t("Source segment missing")}</p>}
             {stale && current.current_text && <Button variant="secondary" size="xs" onClick={() => update((next) => {
               next.domain.sections[section][index].sources.find((item) => item.segment_id === source.segment_id)!.excerpt = current.current_text!;
-              next.domain.sections[section][index].review_status = "needs_review";
-            })}>{t("Use current transcript excerpt and review again")}</Button>}
+            })}>{t("Use current transcript excerpt")}</Button>}
             {stale && <Button variant="secondary" size="xs" onClick={() => update((next) => {
               const target = next.domain.sections[section][index];
               target.sources = target.sources.filter((item) => item.segment_id !== source.segment_id);
@@ -186,7 +183,7 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
       </div>)}
       </div>}
     </div>)}
-    <Button size="sm" disabled={!dirty || busy || bulkSaving} onClick={() => void onSave(draft)}>{t("Save reviewed claims as new version")}</Button>
+    <Button size="sm" disabled={!dirty || busy} onClick={() => void onSave(draft)}>{t("Save notes as new version")}</Button>
     {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}
   </div>;
 }

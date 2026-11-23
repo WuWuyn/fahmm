@@ -19,10 +19,11 @@ let generationError: boolean;
 let generationGate: Promise<void> | null;
 let sourceDriftError: boolean;
 let versionReadError: boolean;
+let localAIReady: boolean;
 beforeEach(() => {
   versionId = null; previewCount = 0; minutesOrigin = "extractive"; sourceOrigin = "extractive";
   domainMode = false; extraVersionId = null; activeTranscript = [{ id: 1, start: 0, end: 1, text: "Xin chào" }];
-  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false;
+  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false; localAIReady = false;
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
       case "minutes.list": return { versions: [versionId, extraVersionId].filter(Boolean).map((id) => ({ version_id: id, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin })), activeVersionId: versionId };
@@ -47,6 +48,11 @@ beforeEach(() => {
       case "minutes.select": return { activeVersionId: extraVersionId };
       case "minutes.template": return { template: { headings: { title: "Tiêu đề" }, guidance: "Review sources", topic_limit: 5 } };
       case "provider.list": return { profiles: [{ id: "p".repeat(32), name: "Provider", model_id: "model", hasKey: false }] };
+      case "llm.availability": return { connected: localAIReady, models: localAIReady ? ["qwen3:4b-instruct"] : [],
+        selectedModel: "qwen3:4b-instruct", ready: localAIReady };
+      case "minutes.generateLocalStart": return { started: true };
+      case "minutes.localStatus": versionId = "l".repeat(32); minutesOrigin = "local_llm";
+        return { state: "completed", progress: 1, error: null, versionId };
       case "transcript.list": return { activeRunId: activeTranscript ? "r".repeat(32) : null };
       case "transcript.read": return { run: { working: activeTranscript } };
       case "minutes.generateOffline":
@@ -72,30 +78,50 @@ it("shows draft provenance and action caveat for edited Markdown without structu
   minutesOrigin = "user_edit";
   sourceOrigin = "extractive";
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
-  expect(await screen.findByText("Edited from an offline extractive draft; user edits have not been automatically verified.")).toBeTruthy();
+  expect(await screen.findByText("Edited from locally extracted minutes.")).toBeTruthy();
   expect(screen.getByText("Any action items in these minutes are suggestions, not assigned or tracked tasks.")).toBeTruthy();
 });
 
-it("keeps Restricted meetings offline and labels drafts unverified", async () => {
+it("creates and displays minutes immediately while keeping Restricted meetings offline", async () => {
   const user = userEvent.setup();
+  vi.mocked(exportSaved).mockResolvedValue({ saved: true, displayName: "minutes.md" });
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
   await screen.findByRole("button", { name: "Generate meeting minutes" });
-  expect(screen.getByText("Advanced draft options")).toBeTruthy();
+  expect(screen.getByText("Advanced minutes options")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
-  await waitFor(() => expect(screen.getByText("Unverified")).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("article").textContent).toContain("Bản nháp"));
+  expect(screen.queryByText("Unverified")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Export Word (.docx)" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Export MD" }));
+  await waitFor(() => expect(vi.mocked(exportSaved)).toHaveBeenCalledWith(
+    "a".repeat(32), "m".repeat(32), "minutes"));
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation, params]) =>
     operation === "minutes.generateOffline" && params?.meetingType === "general")).toBe(true);
   expect(screen.getByRole("button", { name: "Preview provider payload" }).hasAttribute("disabled")).toBe(true);
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "cloud.preview")).toBe(false);
 });
 
-it("shows the new draft controls and review state in Vietnamese", async () => {
+it("uses installed local AI for the one-click minutes action and labels its origin", async () => {
+  localAIReady = true;
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  expect(await screen.findByText(/Write the DENSO form with qwen3:4b-instruct/)).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
+  await waitFor(() => expect(screen.getByText("Local Ollama wrote the DENSO form with transcript citations.")).toBeTruthy(),
+    { timeout: 3000 });
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateLocalStart")).toBe(true);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
+});
+
+it("shows the one-click minutes controls in Vietnamese without review status", async () => {
   versionId = "m".repeat(32);
   useUIStore.setState({ language: "vi" });
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
   expect(await screen.findByRole("heading", { name: "Tạo biên bản" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Tạo biên bản" })).toBeTruthy();
-  await waitFor(() => expect(document.querySelector(".review-badge")?.textContent).toBe("Chưa xác minh"));
+  await waitFor(() => expect(screen.getByRole("article").textContent).toContain("Bản nháp"));
+  expect(screen.queryByText("Chưa xác minh")).toBeNull();
 });
 
 it("explains missing and blank transcripts without generating", async () => {
@@ -129,19 +155,17 @@ it("shows progress, blocks duplicate requests, and allows retry after failure", 
   generationError = false;
   generationGate = null;
   await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
-  await waitFor(() => expect(screen.getByText("Unverified")).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("article").textContent).toContain("Bản nháp"));
   expect(vi.mocked(bridgeCall).mock.calls.filter(([operation]) => operation === "minutes.generateOffline")).toHaveLength(2);
 });
 
-it("shows a saved draft when the sidecar cannot check source drift and prevents approval", async () => {
+it("shows saved minutes even when source comparison is unavailable", async () => {
   domainMode = true; versionId = "m".repeat(32); sourceDriftError = true;
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
     onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
-  expect(await screen.findByRole("button", { name: "Topics" })).toBeTruthy();
-  const warning = await screen.findByRole("alert");
-  expect(warning.textContent).toContain("Source checks are unavailable");
-  expect(warning.closest(".minutes-create")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Approve" }).hasAttribute("disabled")).toBe(true);
+  expect(await screen.findByRole("article")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
 });
 
 it("reports an outdated sidecar beside the action instead of appearing idle", async () => {
@@ -171,6 +195,7 @@ it("keeps unsaved domain edits when regeneration is cancelled", async () => {
   vi.stubGlobal("confirm", vi.fn(() => false));
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
     onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByText("Edit meeting details and notes"));
   await screen.findByRole("button", { name: "Topics" });
   await user.type(screen.getByRole("textbox", { name: "Objective" }), "Review rollout");
   await waitFor(() => expect(screen.getAllByText("Unsaved edits").length).toBeGreaterThan(0));
@@ -186,6 +211,7 @@ it("omits the redundant source list while keeping claim-level playback links", a
   const onOpenSource = vi.fn();
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
     onPrivacyChange={() => {}} onSeek={onSeek} onOpenSource={onOpenSource} runVersion={0} />);
+  await user.click(await screen.findByText("Edit meeting details and notes"));
   await user.click(await screen.findByRole("button", { name: "Topics" }));
   expect(screen.queryByText("Source timestamps")).toBeNull();
   await user.click(screen.getByRole("button", { name: /Seek source segment 1/ }));
@@ -197,6 +223,7 @@ it("uses the selected type for the next draft until the user applies it to a sav
   domainMode = true; versionId = "m".repeat(32);
   const user = userEvent.setup();
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByText("Edit meeting details and notes"));
   await screen.findByRole("button", { name: "Topics" });
   await user.selectOptions(screen.getByLabelText("Meeting type"), "requirement_gathering");
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.setType")).toBe(false);
@@ -278,8 +305,8 @@ it("keeps a dirty domain draft when version switching is cancelled", async () =>
   vi.stubGlobal("confirm", vi.fn(() => false));
   render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}}
     onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByText("Edit meeting details and notes"));
   await user.click(await screen.findByRole("button", { name: "Topics" }));
-  expect(await screen.findByRole("alert")).toBeTruthy();
   await user.type(screen.getByRole("textbox", { name: "Objective" }), "Review rollout");
   await waitFor(() => expect(screen.getAllByText("Unsaved edits").length).toBeGreaterThan(0));
   await user.selectOptions(screen.getByLabelText("Saved version"), extraVersionId);

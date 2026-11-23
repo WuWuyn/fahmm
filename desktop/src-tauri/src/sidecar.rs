@@ -5,6 +5,8 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
@@ -44,6 +46,8 @@ impl SidecarSupervisor {
         let mut process = Command::new(&spec.program);
         process.args(&spec.args).current_dir(&spec.cwd)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        #[cfg(windows)]
+        process.creation_flags(0x08000000); // CREATE_NO_WINDOW: keep the sidecar console hidden.
         for (key, value) in &spec.env {
             process.env(key, value);
         }

@@ -11,6 +11,15 @@
       "params": {},
       "result": { "status": "string" }
     },
+    "report.models": { "params": {}, "result": { "models": "object[]" } },
+    "report.status": { "params": {}, "result": { "report": "object" } },
+    "report.addFile": { "params": { "nativePath": "string" }, "result": { "report": "object" } },
+    "report.addTranscript": { "params": { "meetingId": "string" }, "result": { "report": "object" } },
+    "report.clear": { "params": {}, "result": { "report": "object" } },
+    "report.start": { "params": { "model": "string", "form": "string" }, "result": { "started": "boolean" } },
+    "report.pull": { "params": { "model": "string" }, "result": { "started": "boolean" } },
+    "report.cancel": { "params": {}, "result": { "cancelled": "boolean" } },
+    "report.export": { "params": { "nativePath": "string" }, "result": { "saved": "boolean" } },
     "recording.devices": {
       "params": {},
       "result": { "system": "object[]", "microphone": "object[]" }
@@ -182,6 +191,30 @@
     "minutes.generateOffline": {
       "params": { "meetingId": "string", "runId": "string?", "meetingType": "string?" },
       "result": { "versionId": "string" }
+    },
+    "llm.availability": {
+      "params": {},
+      "result": { "connected": "boolean", "models": "string[]", "selectedModel": "string", "ready": "boolean" }
+    },
+    "llm.select": {
+      "params": { "model": "string" },
+      "result": { "selectedModel": "string" }
+    },
+    "llm.pullStart": {
+      "params": {},
+      "result": { "started": "boolean" }
+    },
+    "llm.pullStatus": {
+      "params": {},
+      "result": { "state": "string", "progress": "number", "error": "string?", "versionId": "string?" }
+    },
+    "minutes.generateLocalStart": {
+      "params": { "meetingId": "string", "meetingType": "string" },
+      "result": { "started": "boolean" }
+    },
+    "minutes.localStatus": {
+      "params": {},
+      "result": { "state": "string", "progress": "number", "error": "string?", "versionId": "string?" }
     },
     "cloud.preview": {
       "params": { "meetingId": "string", "profileId": "string", "selectedIds": "integer[]", "reviewedIds": "integer[]", "prompt": "string", "maxTokens": "integer" },

@@ -13,6 +13,13 @@ target/
 /.build/
 /release/
 
+# Local report models, generated artifacts and packaged applications
+/Fahmm_Bao_Cao/
+/ReportAI_Local_Test/models/
+/ReportAI_Local_Test/outputs/
+/ReportAI_Local_Test/logs/
+/ReportAI_Local_Test/tmp/
+
 # Local configuration and diagnostics
 .env
 .env.*

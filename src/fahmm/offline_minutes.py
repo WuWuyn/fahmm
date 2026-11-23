@@ -187,14 +187,16 @@ def extract_domain_minutes(
         lower = segment["text"].casefold()
         if any(word in lower for word in QUESTION_WORDS):
             append("open_questions", cite(segment))
-        if universal and any(word in lower for word in RISK_WORDS):
+        if any(word in lower for word in RISK_WORDS):
             kind = "blocker" if any(word in lower for word in ("blocker", "bị chặn", "vướng mắc")) else "risk"
             if "phụ thuộc" in lower:
                 kind = "dependency"
             append("risks_blockers", cite(segment, kind=kind))
-        if universal and any(word in lower for word in NEXT_STEP_WORDS):
+        if any(word in lower for word in NEXT_STEP_WORDS):
             append("next_steps", cite(segment))
-        if any(word in lower for word in ACTION_WORDS):
+        if any(word in lower for word in ACTION_WORDS) and not any(
+            phrase in lower for phrase in ("cần làm rõ", "cần có chức năng", "hệ thống phải")
+        ):
             append(
                 "actions",
                 cite(segment, owner=UNKNOWN, due_date=UNKNOWN, confirmation_status="suggested"),
@@ -218,7 +220,9 @@ def extract_domain_minutes(
 
         if meeting_type in ("general", "requirement_gathering") and any(
             word in lower for word in ("yêu cầu", "hệ thống phải", "cần có", "requirement")
-        ):
+        ) and not ("thu thập yêu cầu" in lower and not any(
+            phrase in lower for phrase in ("hệ thống phải", "cần có", "khách hàng yêu cầu")
+        )):
             kind = "business_rule" if "quy tắc" in lower else "functional"
             append("requirements", cite(segment, kind=kind, formality="candidate"))
         if meeting_type in ("general", "technical_discussion"):

@@ -26,22 +26,68 @@ def _safe_text(value: str) -> str:
     return "".join(char for char in value if char in "\t\n\r" or ord(char) >= 32)
 
 
-def _paragraph(body: ET.Element, text: str, style: str, *, indent: bool = False) -> None:
+def _paragraph(body: ET.Element, text: str, style: str, *, indent: bool = False,
+               bold: bool = False) -> None:
     paragraph = ET.SubElement(body, _tag("p"))
     properties = ET.SubElement(paragraph, _tag("pPr"))
     ET.SubElement(properties, _tag("pStyle"), {_tag("val"): style})
     if indent:
         ET.SubElement(properties, _tag("ind"), {_tag("left"): "360"})
     run = ET.SubElement(paragraph, _tag("r"))
+    if bold:
+        ET.SubElement(ET.SubElement(run, _tag("rPr")), _tag("b"))
     node = ET.SubElement(run, _tag("t"), {"{http://www.w3.org/XML/1998/namespace}space": "preserve"})
     node.text = _safe_text(text)
+
+
+def _table(body: ET.Element, rows: list[list[str]]) -> None:
+    table = ET.SubElement(body, _tag("tbl"))
+    properties = ET.SubElement(table, _tag("tblPr"))
+    ET.SubElement(properties, _tag("tblW"), {_tag("w"): "0", _tag("type"): "auto"})
+    borders = ET.SubElement(properties, _tag("tblBorders"))
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        ET.SubElement(borders, _tag(edge), {_tag("val"): "single", _tag("sz"): "4",
+                                          _tag("color"): "D9D9D9"})
+    for row_index, values in enumerate(rows):
+        row = ET.SubElement(table, _tag("tr"))
+        for value in values:
+            cell = ET.SubElement(row, _tag("tc"))
+            cell_properties = ET.SubElement(cell, _tag("tcPr"))
+            if row_index == 0:
+                ET.SubElement(cell_properties, _tag("shd"), {_tag("fill"): "EAF0F8"})
+            margins = ET.SubElement(cell_properties, _tag("tcMar"))
+            for edge in ("top", "left", "bottom", "right"):
+                ET.SubElement(margins, _tag(edge), {_tag("w"): "90", _tag("type"): "dxa"})
+            _paragraph(cell, value, "Normal", bold=row_index == 0)
+
+
+def _table_row(line: str) -> list[str]:
+    return [part.strip() for part in line.strip().strip("|").split("|")]
+
+
+def _is_table_rule(line: str) -> bool:
+    return bool(re.fullmatch(r"\s*\|(?:\s*:?-+:?\s*\|)+\s*", line))
 
 
 def _document(markdown: str) -> bytes:
     document = ET.Element(_tag("document"))
     body = ET.SubElement(document, _tag("body"))
-    for raw in markdown.splitlines():
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        raw = lines[index]
         line = raw.strip()
+        if index + 1 < len(lines) and line.startswith("|") and _is_table_rule(lines[index + 1]):
+            rows = [_table_row(line)]
+            index += 2
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                row = _table_row(lines[index])
+                if len(row) == len(rows[0]):
+                    rows.append(row)
+                index += 1
+            _table(body, rows)
+            continue
+        index += 1
         if not line:
             continue
         heading = re.match(r"^(#{1,3})\s+(.+)$", line)

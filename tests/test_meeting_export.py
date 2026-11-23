@@ -10,6 +10,7 @@ import pytest
 from test_minutes_store import make_meeting_with_run, sample_content
 
 from fahmm import meeting_export
+from fahmm.docx_export import render_docx
 from fahmm.meeting_export import MeetingExportService, render_minutes
 from fahmm.minutes_domain import new_claim, new_domain_content
 from fahmm.minutes_store import MinutesStore
@@ -18,7 +19,22 @@ from fahmm.offline_minutes import OfflineMinutesService
 from fahmm.transcripts import TranscriptStore
 
 
-def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
+def test_word_renderer_preserves_form_tables():
+    from io import BytesIO
+
+    document = render_docx("# MEETING MINUTES\n\n| Hạng mục | Nội dung |\n| --- | --- |\n| Mục tiêu | Review demo |")
+    with ZipFile(BytesIO(document)) as archive:
+        root = ET.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    table = root.find(".//w:tbl", ns)
+    assert table is not None
+    assert len(table.findall("w:tr", ns)) == 2
+    assert [node.text for node in table.findall(".//w:t", ns)] == [
+        "Hạng mục", "Nội dung", "Mục tiêu", "Review demo"
+    ]
+
+
+def test_explicit_minutes_versions_export_without_review_state(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     versions = MinutesStore(meetings)
     approved = versions.save_version(
@@ -32,16 +48,16 @@ def test_explicit_minutes_version_review_state_and_vietnamese(tmp_path):
     service = MeetingExportService(meetings)
     first = service.minutes_markdown(meeting_id, approved)
     second = service.minutes_markdown(meeting_id, newer)
-    assert "> Review state: Approved" in first
-    assert "> Draft type: Source-linked extractive draft; not a semantic AI summary." in first
+    assert "Review state:" not in first
+    assert "> Generation: Local transcript extraction; not a semantic AI summary." in first
     assert "Đã thống nhất thử nghiệm." in first
-    assert "[0.0s]" in first
+    assert "[0.0s]" not in first
     assert "Bản chưa duyệt" not in first
-    assert "> Review state: Unverified" in second
+    assert "Review state:" not in second
     assert "Bản chưa duyệt" in second
 
 
-def test_word_export_uses_selected_saved_version_and_preserves_review_notice(tmp_path):
+def test_word_export_uses_selected_saved_version_without_review_notice(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
     versions = MinutesStore(meetings)
     older = versions.save_version(
@@ -62,9 +78,9 @@ def test_word_export_uses_selected_saved_version_and_preserves_review_notice(tmp
                      if node.tag.endswith("}t"))
     assert "Bản mới" in text
     assert "Đã thống nhất thử nghiệm." not in text
-    assert "Review state: Unverified" in text
+    assert "Review state:" not in text
     assert "Any action items in these minutes are suggestions" in text
-    assert "[0.0s]" in text
+    assert "[0.0s]" not in text
     with pytest.raises(FileExistsError, match="Confirm"):
         service.export_minutes_docx(meeting_id, older, destination)
     with pytest.raises(ValueError, match=".docx"):
@@ -101,37 +117,42 @@ def test_export_labels_action_entries_as_suggestions(tmp_path):
     assert "Kiểm tra thử nghiệm" in markdown
 
 
-def test_universal_draft_export_includes_empty_sections_and_sources(tmp_path):
+def test_universal_draft_export_includes_empty_sections(tmp_path):
     meetings, meeting_id, _run_id = make_meeting_with_run(tmp_path)
     version_id = OfflineMinutesService(meetings).generate(meeting_id, meeting_type="general")
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version_id)
     assert "## Tóm tắt" in markdown
     assert "## Yêu cầu ứng viên" in markdown
-    assert "## Quyết định cần xác minh" in markdown
-    assert "Chưa có thông tin được xác minh từ bản phiên âm." in markdown
-    assert "đoạn 1" in markdown
+    assert "## Quyết định" in markdown
+    assert "Chưa có thông tin trong bản phiên âm." in markdown
+    assert "Cần xem lại" not in markdown
     assert "## Ghi nhận UAT" not in markdown
 
 
-def test_edited_minutes_keep_labeled_underlying_sources(tmp_path):
+def test_edited_minutes_omit_saved_timestamp_notes_and_export_appendix(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path)
     versions = MinutesStore(meetings)
     content = sample_content(run_id)
-    content["user_text"] = "# Biên bản đã sửa\nQuyết định cần kiểm tra lại."
+    clean = ("# Biên bản đã sửa\r\nQuyết định cần kiểm tra lại.\r\n"
+             "| Hẹn kiểm tra lúc 09:30 (Nguồn: báo cáo kho) | Mai |\r\n- Gửi báo cáo.")
+    content["user_text"] = clean.replace("lại.", "lại. (Nguồn: 00:00:19.8, 00:01:16.4)").replace(
+        "kho) |", "kho) (Nguồn: 01:05:07.4) |") + " [0.0s]"
     first = versions.save_version(
         meeting_id, run_id, "extractive", sample_content(run_id), "default"
     )
     edited = versions.edit_version(meeting_id, first, content)
 
+    saved = versions.read_version(meeting_id, edited)["content"]
+    assert render_minutes(saved) == clean
+    assert saved["user_text"] == content["user_text"]
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
-    assert "# Biên bản đã sửa" in markdown
+    assert clean in markdown
     assert (
-        "> Draft type: Edited from an offline extractive draft; user edits have not been automatically verified."
+        "> Generation: Edited from locally extracted minutes."
         in markdown
     )
-    assert "## Source references from the underlying draft" in markdown
-    assert "do not automatically verify the edited text" in markdown
-    assert "00:00:00.0–00:00:02.0" in markdown
+    assert "## Source references" not in markdown
+    assert "00:00:00.0–00:00:02.0" not in markdown
 
 
 def test_offline_draft_edit_and_export_preserve_provenance_and_action_caveat(tmp_path):
@@ -149,7 +170,7 @@ def test_offline_draft_edit_and_export_preserve_provenance_and_action_caveat(tmp
     assert manifest["parent_version_id"] == first
     assert manifest["source_origin"] == "extractive"
     assert (
-        "> Draft type: Edited from an offline extractive draft; user edits have not been automatically verified."
+        "> Generation: Edited from locally extracted minutes."
         in exported
     )
     assert (
@@ -168,7 +189,7 @@ def test_provider_edited_export_labels_origin_and_action_caveat_without_actions(
     edited = versions.edit_version(meeting_id, first, content)
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, edited)
     assert (
-        "> Draft type: Edited from a provider-generated draft; user edits have not been automatically verified."
+        "> Generation: Edited from provider-generated minutes."
         in markdown
     )
     assert (
@@ -285,7 +306,7 @@ def test_managed_destination_is_rejected(tmp_path):
         service.export_transcript(meeting_id, run_id, model_root / "transcript.txt")
 
 
-def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp_path):
+def test_domain_preview_and_export_use_same_saved_claims_and_freeform_text(tmp_path):
     meetings, meeting_id, run_id = make_meeting_with_run(tmp_path / "meetings")
     source = {
         "run_id": run_id,
@@ -316,10 +337,8 @@ def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp
     assert preview in markdown
     assert "Loại cuộc họp: Cập nhật dự án" in preview
     assert "Ngày giờ họp: Chưa rõ" in preview
-    assert "Người phụ trách: Chưa rõ" in preview
-    assert "00:00:00.0–00:00:02.0" in preview
-    assert "Cần xem lại" in preview
-    assert "chưa phải công việc được theo dõi" in preview
+    assert "- Đã thống nhất thử nghiệm." in preview
+    assert "Cần xem lại" not in preview
     assert "## Ghi nhận UAT" not in preview
     assert "## Yêu cầu ứng viên" not in preview
     edited = copy.deepcopy(saved)
@@ -327,8 +346,7 @@ def test_domain_preview_and_export_use_same_saved_claims_and_freeform_notice(tmp
     edited_id = store.edit_version(meeting_id, version_id, edited)
     freeform = MeetingExportService(meetings).minutes_markdown(meeting_id, edited_id)
     assert "Nội dung tự do." in freeform
-    assert "## Source references from the underlying draft" in freeform
-    assert "do not automatically verify the edited text" in freeform
+    assert "## Source references" not in freeform
 
 
 def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sources(tmp_path):
@@ -354,9 +372,35 @@ def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sourc
     preview = render_minutes(saved)
     assert "- Đã thống nhất thử nghiệm.\n" in preview
     assert "- Đã thống nhất thử nghiệm. (" not in preview
-    assert "- Cần kiểm tra thêm. (Cần xem lại; Trích xuất từ phiên âm; đoạn 1" in preview
-    assert "- Gửi tài liệu cho khách hàng. — Người phụ trách: Mai · Hạn: 2026-11-20" in preview
+    assert "- Cần kiểm tra thêm.\n" in preview
+    assert "| Gửi tài liệu cho khách hàng. | Mai | 2026-11-20 |" in preview
     assert saved["domain"]["sections"]["summary"][0]["sources"] == [source]
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version)
     assert preview in markdown
     assert "- Đã thống nhất thử nghiệm. (" not in markdown
+
+
+def test_denso_overview_lists_all_categories_before_details_and_tables_next_steps():
+    content = new_domain_content("general", title="Biên bản")
+    content["format"] = "denso_warehouse"
+    def form_claim(label, text):
+        return new_claim(text, "user", label=label, method="Chưa rõ", data_source="Chưa rõ",
+                         open_point="Chưa rõ", owner="Chưa rõ", due_date="Chưa rõ")
+    sections = content["domain"]["sections"]
+    sections["dashboard_layout"] = [form_claim("Màn hình", "Điều chỉnh bố cục."),
+                                    form_claim("Bộ lọc", "Thêm bộ lọc.")]
+    sections["sqdcm_kpis"] = [form_claim("Q", "Theo dõi chất lượng.")]
+    sections["project_actions"] = [form_claim("Kiểm thử", "Thực hiện kiểm thử.")]
+    sections["next_steps"] = [new_claim("Gửi tài liệu.", "user")]
+    result = render_minutes(content)
+    overview, details = result.split("## 3. Bố cục", 1)
+    assert "| Hạng mục | Điều chỉnh thống nhất |" in overview
+    assert "Điều chỉnh bố cục." in overview and "Thêm bộ lọc." in overview
+    assert "Theo dõi chất lượng." in overview and "Thực hiện kiểm thử." in overview
+    assert "| Nhóm | Thông tin cần theo dõi |" in details
+    assert "| Công việc tiếp theo |\n| --- |\n| Gửi tài liệu. |" in details
+    sections["sqdcm_kpis"] = []
+    sections["next_steps"] = []
+    without_optional = render_minutes(content)
+    assert "### 4.2. Nhóm chỉ số SQDCM" not in without_optional
+    assert "## 8. Công việc tiếp theo" not in without_optional

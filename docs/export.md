@@ -4,11 +4,9 @@ fahmm exports ordinary UTF-8 files from **saved** meeting data. Choose a minutes
 
 ## `minutes.md`
 
-The Markdown starts with the selected version's review state. An unverified draft remains visibly unverified when opened in another app. The body uses Vietnamese headings and includes source start times where the saved structured items have citations. For example, a source-linked decision can appear as:
+The preview, clipboard copy, Markdown and Word exports show the text of each decision. For example, the minutes can contain the following entry.
 
 ```markdown
-> Review state: Unverified
-
 # Chưa rõ
 Ngày: Chưa rõ
 Người tham dự: Chưa rõ
@@ -16,10 +14,10 @@ Người tham dự: Chưa rõ
 ...
 
 ## Quyết định
-- Đã thống nhất thử nghiệm. [0.0s]
+- Đã thống nhất thử nghiệm.
 ```
 
-When a reviewer saves free-form minutes edits, fahmm preserves the underlying draft's citations in a separate **Source references from the underlying draft** appendix. Its `HH:MM:SS.s` ranges are navigation aids, not proof that the edited sentences are supported by the recording. Approval is a user action; export does not approve a version or verify claims automatically.
+Reviewers can open a note in the structured editor to look up its linked transcript segments.
 
 ## `transcript.txt`
 
