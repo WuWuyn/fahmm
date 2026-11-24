@@ -16,6 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
+from fahmm.local_locks import exclusive_file_lock
+
 SAMPLE_RATE = 48_000
 CHUNK_RE = re.compile(r"^(\d{12})-[0-9a-f]{8}\.wav$")
 SOURCES = ("system", "microphone")
@@ -53,6 +55,17 @@ class MeetingStore:
         if not re.fullmatch(r"[0-9a-f]{32}", meeting_id):
             raise ValueError("Invalid meeting ID")
         return self.root / meeting_id
+
+    @contextmanager
+    def input_guard(
+        self, meeting_id: str, *, cancel: threading.Event | None = None, timeout: float = 10.0
+    ):
+        """Serialize updates to inputs shared by transcript and minutes jobs."""
+        directory = self._meeting_dir(meeting_id)
+        if not directory.is_dir():
+            raise FileNotFoundError("Meeting does not exist")
+        with exclusive_file_lock(directory / ".inputs.lock", cancel=cancel, timeout=timeout):
+            yield
 
     def create(self, devices: dict[str, str]) -> str:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -130,7 +143,7 @@ class MeetingStore:
                 temporary.unlink(missing_ok=True)
 
     def update_metadata(self, meeting_id: str, **changes: object) -> dict:
-        with self._metadata_lock:
+        with self.input_guard(meeting_id), self._metadata_lock:
             if meeting_id in self._deleting:
                 raise RuntimeError("This meeting is being deleted")
             data = self.metadata(meeting_id)
@@ -147,7 +160,7 @@ class MeetingStore:
     def set_privacy_mode(self, meeting_id: str, mode: str) -> None:
         if mode not in PRIVACY_MODES:
             raise ValueError("Unknown meeting privacy mode")
-        with self._metadata_lock:
+        with self.input_guard(meeting_id), self._metadata_lock:
             if self._cloud_sends.get(meeting_id, 0):
                 raise RuntimeError("Wait for the current provider request to finish")
             self.update_metadata(meeting_id, privacy_mode=mode)
@@ -339,11 +352,30 @@ class MeetingStore:
                 output.setnchannels(2)
                 output.setsampwidth(2)
                 output.setframerate(SAMPLE_RATE)
+                next_chunk = {source: 0 for source in SOURCES}
+                active: dict[str, list[Chunk]] = {source: [] for source in SOURCES}
                 for start in range(0, last_frame, SAMPLE_RATE):
                     end = min(start + SAMPLE_RATE, last_frame)
                     stereo = np.zeros((end - start, 2), dtype="<i2")
                     for channel, source in enumerate(SOURCES):
-                        for chunk in chunks[source]:
+                        # scan_chunks() orders by offset and then filename. Keep
+                        # that order for active chunks so later overlaps still
+                        # overwrite earlier samples exactly as before.
+                        active[source] = [
+                            chunk
+                            for chunk in active[source]
+                            if chunk.start_frame + chunk.frames > start
+                        ]
+                        source_chunks = chunks[source]
+                        while (
+                            next_chunk[source] < len(source_chunks)
+                            and source_chunks[next_chunk[source]].start_frame < end
+                        ):
+                            chunk = source_chunks[next_chunk[source]]
+                            next_chunk[source] += 1
+                            if chunk.start_frame + chunk.frames > start:
+                                active[source].append(chunk)
+                        for chunk in active[source]:
                             overlap_start = max(start, chunk.start_frame)
                             overlap_end = min(end, chunk.start_frame + chunk.frames)
                             if overlap_end <= overlap_start:
@@ -358,11 +390,9 @@ class MeetingStore:
             with temporary.open("r+b") as file:
                 os.fsync(file.fileno())
             os.replace(temporary, target)
-            data = self.metadata(meeting_id)
-            data["state"] = "completed"
-            data["recording"] = str(target)
-            data["skipped_chunks"] = list(skipped)
-            self._write_metadata(meeting_id, data)
+            self.update_metadata(
+                meeting_id, state="completed", recording=str(target), skipped_chunks=list(skipped)
+            )
             return RecoveryResult(target, skipped)
         except Exception:
             self.set_state(meeting_id, "error")

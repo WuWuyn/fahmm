@@ -186,7 +186,31 @@
     },
     "asr.status": {
       "params": {},
-      "result": { "state": "string", "meetingId": "string?", "runId": "string?", "progress": "number?", "segmentCount": "integer", "error": "string?" }
+      "result": { "state": "string", "meetingId": "string?", "runId": "string?", "progress": "number?", "segmentCount": "integer", "error": "string?", "errorCode": "string?" }
+    },
+    "live.start": {
+      "params": { "meetingId": "string", "modelId": "string", "language": "string" },
+      "result": { "runId": "string" }
+    },
+    "live.resume": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "runId": "string" }
+    },
+    "live.status": {
+      "params": {},
+      "result": { "state": "string", "meetingId": "string?", "runId": "string?", "cursorSeconds": "number", "segmentCount": "integer", "provisionalCount": "integer", "reviewWindows": "integer", "errorCode": "string?", "captureStatus": "string?", "backlogSeconds": "number?" }
+    },
+    "live.cancel": {
+      "params": { "meetingId": "string", "runId": "string" },
+      "result": { "accepted": "boolean" }
+    },
+    "live.runs": {
+      "params": { "meetingId": "string", "after": "string", "limit": "integer" },
+      "result": { "runs": "object[]", "nextCursor": "string?" }
+    },
+    "live.read": {
+      "params": { "meetingId": "string", "runId": "string", "kind": "string", "after": "integer", "limit": "integer", "latest": "boolean" },
+      "result": { "items": "object[]", "nextCursor": "number?" }
     },
     "minutes.generateOffline": {
       "params": { "meetingId": "string", "runId": "string?", "meetingType": "string?" },
@@ -210,11 +234,27 @@
     },
     "minutes.generateLocalStart": {
       "params": { "meetingId": "string", "meetingType": "string" },
-      "result": { "started": "boolean" }
+      "result": { "started": "boolean", "jobId": "string" }
     },
     "minutes.localStatus": {
       "params": {},
-      "result": { "state": "string", "progress": "number", "error": "string?", "versionId": "string?" }
+      "result": { "state": "string", "progress": "number", "error": "string?", "versionId": "string?", "meetingId": "string?", "jobId": "string?" }
+    },
+    "minutes.localCheckpoint": {
+      "params": { "meetingId": "string" },
+      "result": { "available": "boolean", "meetingType": "string?", "progress": "number", "error": "string?" }
+    },
+    "minutes.resumeLocalStart": {
+      "params": { "meetingId": "string" },
+      "result": { "started": "boolean", "jobId": "string" }
+    },
+    "minutes.cancelLocal": {
+      "params": { "meetingId": "string", "jobId": "string" },
+      "result": { "accepted": "boolean" }
+    },
+    "minutes.discardLocalCheckpoint": {
+      "params": { "meetingId": "string" },
+      "result": { "discarded": "boolean" }
     },
     "cloud.preview": {
       "params": { "meetingId": "string", "profileId": "string", "selectedIds": "integer[]", "reviewedIds": "integer[]", "prompt": "string", "maxTokens": "integer" },
@@ -306,6 +346,7 @@
     "UNSUPPORTED_VERSION",
     "UNSUPPORTED_OPERATION",
     "BACKEND_UNAVAILABLE",
+    "RESOURCE_BUSY",
     "OPERATION_FAILED"
   ]
 }

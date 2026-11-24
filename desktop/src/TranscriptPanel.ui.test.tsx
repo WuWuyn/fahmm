@@ -3,10 +3,26 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TranscriptPanel } from "@/features/transcript/TranscriptPanel";
+import { useUIStore } from "@/shared/uiStore";
 import { bridgeCall, exportAudio, exportSaved } from "@/shared/bridge/client";
 
 vi.mock("@/shared/bridge/client", () => ({ bridgeCall: vi.fn(), exportAudio: vi.fn(), exportSaved: vi.fn() }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); useUIStore.setState({ language: "en" }); vi.clearAllMocks(); });
+
+it("explains when another model task prevents transcription", async () => {
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "transcript.list") return { runs: [], activeRunId: null };
+    if (operation === "model.catalog") return { selectedId: "m".repeat(32) };
+    if (operation === "asr.status") return { state: "idle", meetingId: null, runId: null, progress: null, segmentCount: 0, error: null };
+    if (operation === "asr.startFrom") throw new Error("RESOURCE_BUSY");
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  const user = userEvent.setup();
+  render(<TranscriptPanel meetingId={"a".repeat(32)} onSeek={() => {}} onRunChange={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Transcribe" }).hasAttribute("disabled")).toBe(false));
+  await user.click(screen.getByRole("button", { name: "Transcribe" }));
+  expect(await screen.findByText("Wait for the current transcription or AI job to finish.")).toBeTruthy();
+});
 
 it("starts at the selected playhead or defaults to the beginning of the selected meeting", async () => {
   const user = userEvent.setup();
@@ -110,7 +126,7 @@ it("does not export unsaved transcript text and treats a native dialog cancel as
   await user.click(screen.getByRole("button", { name: "Export plain TXT" }));
   await waitFor(() => expect(vi.mocked(exportSaved)).toHaveBeenCalledWith("a".repeat(32), runId, "transcriptPlain"));
   expect(screen.queryByText(/Exported transcript/)).toBeNull();
-  expect(screen.queryByText("Unsaved edits")).toBeNull();
+  expect(screen.getByText("Unsaved edits")).toBeTruthy();
   confirm.mockRestore();
 });
 
@@ -127,4 +143,46 @@ it("exports recording audio even when no transcript exists", async () => {
   await user.click(await screen.findByRole("button", { name: "Export audio" }));
   expect(vi.mocked(exportAudio)).toHaveBeenCalledWith("a".repeat(32));
   expect(await screen.findByText("Exported recording.wav.")).toBeTruthy();
+});
+
+
+it("opens the transcript run requested by a minutes source", async () => {
+  const first = "r".repeat(32), source = "s".repeat(32);
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "transcript.list") return { runs: [first, source].map((id) => ({ run_id: id, created_at: "2026-11-14T00:00:00Z", model_repository: "test/base" })), activeRunId: first };
+    if (operation === "model.catalog") return { selectedId: "m".repeat(32) };
+    if (operation === "asr.status") return { state: "idle", meetingId: null, runId: null, progress: null, segmentCount: 0, error: null };
+    if (operation === "transcript.read") {
+      const text = params?.runId === source ? "Source run" : "Other run";
+      const segments = [{ id: 1, start: 0, end: 1, text }];
+      return { run: { manifest: { run_id: params?.runId }, original: segments, working: segments } };
+    }
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  const panel = (requestedRun: { runId: string; nonce: number } | null) => <TranscriptPanel meetingId={"a".repeat(32)}
+    onSeek={() => {}} onRunChange={() => {}} requestedRun={requestedRun} />;
+  const { rerender } = render(panel(null));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Transcript segment 1" })).toHaveProperty("value", "Other run"));
+  rerender(panel({ runId: source, nonce: 1 }));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Transcript segment 1" })).toHaveProperty("value", "Source run"));
+});
+
+
+it.each([
+  ["asr_memory_low", "Phiên âm đã dừng vì RAM khả dụng thấp"],
+  ["asr_memory_unavailable", "Phiên âm đã dừng vì không kiểm tra được RAM khả dụng"],
+])("explains %s without exposing the worker error in Vietnamese", async (errorCode, expected) => {
+  const meetingId = "a".repeat(32);
+  useUIStore.setState({ language: "vi" });
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "transcript.list") return { runs: [], activeRunId: null };
+    if (operation === "model.catalog") return { selectedId: "m".repeat(32) };
+    if (operation === "asr.status") return { state: "error", meetingId, runId: null, progress: null, segmentCount: 0, error: "raw worker error", errorCode };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  render(<TranscriptPanel meetingId={meetingId} onSeek={() => {}} onRunChange={() => {}} />);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain(expected);
+  expect(alert.textContent).toContain("Bản ghi âm và transcript đã lưu vẫn được giữ nguyên");
+  expect(alert.textContent).not.toContain("raw worker error");
 });

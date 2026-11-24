@@ -38,6 +38,19 @@ function Topbar({ language, setLanguage }: { language: "en" | "vi"; setLanguage:
   </header>;
 }
 
+function PersistentMeetings({ backendReady, backendEpoch, onDirtyChange }: {
+  backendReady: boolean; backendEpoch: number; onDirtyChange: (dirty: boolean) => void;
+}) {
+  const location = useLocation();
+  const [visited, setVisited] = useState(location.pathname === "/meetings");
+  useEffect(() => { if (location.pathname === "/meetings") setVisited(true); }, [location.pathname]);
+  if (!visited && location.pathname !== "/meetings") return null;
+  return <div hidden={location.pathname !== "/meetings"}>
+    <Meetings key={backendEpoch} backendReady={backendReady} onDirtyChange={onDirtyChange}
+      visible={location.pathname === "/meetings"} openMeetingId={new URLSearchParams(location.search).get("open")} />
+  </div>;
+}
+
 function App() {
   const t = useT();
   const theme = useUIStore((state) => state.theme);
@@ -49,6 +62,7 @@ function App() {
   const [backendReady, setBackendReady] = useState(false);
   const [checking, setChecking] = useState(true);
   const [restarting, setRestarting] = useState(false);
+  const [meetingDirty, setMeetingDirty] = useState(false);
   const [backendEpoch, setBackendEpoch] = useState(0);
   const reducedMotion = useReducedMotion();
 
@@ -69,7 +83,15 @@ function App() {
     return () => { current = false; window.clearInterval(timer); };
   }, []);
 
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => { if (meetingDirty) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [meetingDirty]);
+
   async function restart() {
+    if (meetingDirty && !window.confirm(t("Restart the backend and discard unsaved meeting edits?"))) return;
+    setMeetingDirty(false);
     setRestarting(true);
     try { await restartBridge(); setBackendReady(await bridgeStatus()); setBackendEpoch((epoch) => epoch + 1); }
     catch { setBackendReady(false); }
@@ -109,10 +131,11 @@ function App() {
         <div><strong>{t("Local backend unavailable")}</strong><span>{t("Recording and meeting data are temporarily unavailable.")}</span></div>
         <Button variant="secondary" disabled={restarting} onClick={() => void restart()}><RotateCcw size={16} />{t(restarting ? "Restarting…" : "Restart backend")}</Button>
       </motion.div>}
+      <PersistentMeetings backendReady={backendReady} backendEpoch={backendEpoch} onDirtyChange={setMeetingDirty} />
       <Routes>
         <Route path="/" element={<Navigate to="/recorder" replace />} />
         <Route path="/recorder" element={<Recorder key={backendEpoch} backendReady={backendReady} />} />
-        <Route path="/meetings" element={<Meetings key={backendEpoch} backendReady={backendReady} />} />
+        <Route path="/meetings" element={null} />
         <Route path="/reports" element={<Reports key={backendEpoch} backendReady={backendReady} />} />
         <Route path="/models" element={<Models key={backendEpoch} backendReady={backendReady} />} />
         <Route path="/settings" element={<Settings key={backendEpoch} backendReady={backendReady} />} />

@@ -64,9 +64,10 @@ class MinutesStore:
 
     def save_template(self, meeting_id: str, template: dict) -> None:
         self._validate_template(template)
-        directory = self.meetings._meeting_dir(meeting_id) / "minutes"
-        directory.mkdir(parents=True, exist_ok=True)
-        _atomic_json(directory / "template.json", template)
+        with self.meetings.input_guard(meeting_id):
+            directory = self.meetings._meeting_dir(meeting_id) / "minutes"
+            directory.mkdir(parents=True, exist_ok=True)
+            _atomic_json(directory / "template.json", template)
 
     @staticmethod
     def _validate_template(template: object) -> None:
@@ -93,6 +94,7 @@ class MinutesStore:
         provider_id: str | None = None,
         *,
         parent_version_id: str | None = None,
+        version_id: str | None = None,
     ) -> str:
         if origin not in ("extractive", "local_llm", "provider", "user_edit"):
             raise ValueError("Invalid minutes origin")
@@ -122,10 +124,26 @@ class MinutesStore:
         self._validate_sources(content, run_id, valid_ids)
         if "domain_schema_version" in content:
             self._validate_domain_sources(content, run_id, run["working"])
-        version_id = uuid.uuid4().hex
+        version_id = version_id or uuid.uuid4().hex
         target = self._version_dir(meeting_id, version_id)
         target.parent.mkdir(parents=True, exist_ok=True)
-        staging = target.parent / f".version-{version_id}"
+        if target.exists():
+            saved = self.read_version(meeting_id, version_id)
+            manifest = saved["manifest"]
+            if (
+                manifest["run_id"] != run_id
+                or manifest["origin"] != origin
+                or manifest.get("template") != template
+                or manifest.get("provider_id") != provider_id
+                or manifest.get("parent_version_id") != parent_version_id
+                or saved["content"] != content
+            ):
+                raise ValueError("Minutes version ID is already used by different content")
+            self.meetings.update_metadata(meeting_id, active_minutes_version=version_id)
+            return version_id
+        # An independent random name permits retry after a crash without adding
+        # the version ID to already deep Windows paths.
+        staging = target.parent / f".version-{uuid.uuid4().hex}"
         staging.mkdir(exist_ok=False)
         manifest = {
             "schema_version": 2,

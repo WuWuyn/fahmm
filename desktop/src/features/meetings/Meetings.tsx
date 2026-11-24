@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { AudioPlayer } from "./AudioPlayer";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
@@ -27,16 +27,24 @@ function createdTime(value: string, language: "en" | "vi"): string {
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
-export function Meetings({ backendReady }: { backendReady: boolean }) {
+export function Meetings({ backendReady, onDirtyChange, visible = true, openMeetingId }: { backendReady: boolean; onDirtyChange?: (dirty: boolean) => void; visible?: boolean; openMeetingId?: string | null }) {
   const t = useT();
   const language = useUIStore((state) => state.language);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"transcript" | "minutes">("transcript");
   const [seekTo, setSeekTo] = useState<{ seconds: number; nonce: number; play?: boolean } | null>(null);
   const [playheadSeconds, setPlayheadSeconds] = useState(0);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [minutesDirty, setMinutesDirty] = useState(false);
+  const [transcriptDirty, setTranscriptDirty] = useState(false);
+  const [requestedRun, setRequestedRun] = useState<{ runId: string; nonce: number } | null>(null);
+  useEffect(() => { onDirtyChange?.(minutesDirty || transcriptDirty); }, [minutesDirty, transcriptDirty, onDirtyChange]);
+  const allowMeetingChange = () => !(minutesDirty || transcriptDirty) ||
+    window.confirm(t("Discard unsaved transcript and minutes edits before changing meetings?"));
   const [runVersion, setRunVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -51,16 +59,28 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }, [backendReady]);
 
   const refresh = useCallback(async () => {
-    if (!backendReady) return;
+    if (!backendReady) return null;
     try {
       const data = await bridgeCall<{ meetings: Meeting[] }>("meeting.list");
       setMeetings(data.meetings);
       setSelectedId((current) => current && data.meetings.some((item) => item.id === current)
         ? current : data.meetings[0]?.id || "");
-    } catch { setMessage("Could not load local meetings. Restart the backend and try again."); }
+      return data.meetings;
+    } catch { setMessage("Could not load local meetings. Restart the backend and try again."); return null; }
     finally { setLoading(false); }
   }, [backendReady]);
-  useEffect(() => { void refresh(); void refreshCleanup(); }, [refresh, refreshCleanup]);
+  useEffect(() => { void refreshCleanup(); }, [refreshCleanup]);
+  useEffect(() => {
+    if (!visible || !backendReady) return;
+    let alive = true;
+    void refresh().then((items) => {
+      if (!alive || !openMeetingId || openMeetingId === selectedId || !items?.some((item) => item.id === openMeetingId)) return;
+      if (!allowMeetingChange()) return;
+      setMinutesDirty(false); setTranscriptDirty(false); setRequestedRun(null);
+      setSelectedId(openMeetingId); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0);
+    });
+    return () => { alive = false; };
+  }, [visible, backendReady, openMeetingId, refresh]);
   useEffect(() => {
     let active = true;
     if (!backendReady) { setDemoAvailable(false); return; }
@@ -72,6 +92,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   async function showImportedMeeting(meetingId: string) {
     await refresh();
     setQuery("");
+    setMinutesDirty(false); setTranscriptDirty(false); setRequestedRun(null);
     setSelectedId(meetingId);
     setTab("transcript");
     setSeekTo(null);
@@ -80,6 +101,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   async function addMeeting() {
+    if (!allowMeetingChange()) return;
     setMessage("");
     try {
       const result = await importAudio();
@@ -88,6 +110,7 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
   }
 
   async function addDemoMeeting() {
+    if (!allowMeetingChange()) return;
     setMessage("");
     setDemoImporting(true);
     try {
@@ -158,7 +181,8 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
         <h2>{group.label}</h2>
         {group.items.map((meeting) => <button key={meeting.id} className={`meeting-row${meeting.id === selectedId ? " selected" : ""}`}
           aria-current={meeting.id === selectedId ? "true" : undefined}
-          onClick={() => { setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
+          onClick={() => { if (meeting.id === selectedId) return; if (!allowMeetingChange()) return;
+            setMinutesDirty(false); setTranscriptDirty(false); setRequestedRun(null); setSelectedId(meeting.id); setTab("transcript"); setSeekTo(null); setPlayheadSeconds(0); setAudioDurationSeconds(0); }}>
           <span className="meeting-icon"><AudioLines size={20} /></span><span className="meeting-row-copy"><strong>{meeting.name}</strong>
             <small>{group.label === t("Today") ? createdTime(meeting.created_at, language) : formatDate(meeting.created_at, language)} · {t(meeting.source_kind)}</small>
             <small className="meeting-row-status">{statusLabel(meeting)}</small></span>
@@ -182,15 +206,18 @@ export function Meetings({ backendReady }: { backendReady: boolean }) {
           <TabsTrigger value="transcript">{t("Transcript")}</TabsTrigger>
           <TabsTrigger value="minutes">{t("Minutes")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="transcript" className="panel document-surface"><TranscriptPanel meetingId={selected.id} onSeek={seek}
+        <TabsContent forceMount hidden={tab !== "transcript"} value="transcript" className="panel document-surface"><TranscriptPanel key={selected.id} meetingId={selected.id} onSeek={seek}
+          requestedRun={requestedRun} onDirtyChange={setTranscriptDirty}
           playheadSeconds={playheadSeconds} audioDurationSeconds={audioDurationSeconds}
           onRunChange={handleRunChange} /></TabsContent>
-        <TabsContent value="minutes" className="panel document-surface"><MinutesPanel meetingId={selected.id} privacyMode={selected.privacy_mode}
+        <TabsContent forceMount hidden={tab !== "minutes"} value="minutes" className="panel document-surface"><MinutesPanel key={selected.id} meetingId={selected.id} privacyMode={selected.privacy_mode}
+            onDirtyChange={setMinutesDirty}
             onPrivacyChange={(mode) => setMeetings((current) => current.map((item) => item.id === selected.id ? { ...item, privacy_mode: mode } : item))}
             onSeek={seek} onOpenSource={(runId, seconds) => {
+              if (transcriptDirty && !window.confirm(t("Discard unsaved transcript edits before opening the source?"))) return;
               void bridgeCall("transcript.select", { meetingId: selected.id, runId })
-                .then(() => { seek(seconds); setTab("transcript"); setRunVersion((version) => version + 1); })
-                .catch(() => setMessage("Could not open the source transcript."));
+                .then(() => { if (selectedIdRef.current !== selected.id) return; setRequestedRun({ runId, nonce: Date.now() }); seek(seconds); setTab("transcript"); setRunVersion((version) => version + 1); })
+                .catch(() => { if (selectedIdRef.current === selected.id) setMessage("Could not open the source transcript."); });
             }} runVersion={runVersion} /></TabsContent>
       </Tabs>
     </> : <div className="panel detail-empty">{t("Select a meeting to review its recording and documents.")}</div>}</div></div>

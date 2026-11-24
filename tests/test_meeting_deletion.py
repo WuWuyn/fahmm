@@ -1,16 +1,64 @@
 """Meeting deletion cannot escape its app-owned directory."""
 
+import multiprocessing
 import os
 import subprocess
+import time
 import uuid
 
 import pytest
 from test_media import make_audio
+from test_shared_file_lock import _hold_lock
 
 from fahmm import meeting_deletion
 from fahmm.media import import_audio
 from fahmm.meeting_deletion import DeletionIncompleteError, MeetingDeletionService
+from fahmm.shared_file_lock import SharedFileLock, live_meeting_lock_path
 from fahmm.storage import MeetingStore
+
+
+def test_delete_rejects_live_process_without_replacing_lock_file(tmp_path, monkeypatch):
+    store = MeetingStore(tmp_path / "meetings")
+    meeting_id, other = store.create({}), store.create({})
+    lock_path = live_meeting_lock_path(store.root, meeting_id)
+    lock_path.write_bytes(b"stable live lock")
+    context = multiprocessing.get_context("spawn")
+    ready, release, finished = (context.Event() for _ in range(3))
+    holder = context.Process(
+        target=_hold_lock, args=(str(lock_path), True, ready, release, finished)
+    )
+    holder.start()
+    try:
+        assert ready.wait(10)
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match="in use by live transcription"):
+            MeetingDeletionService(store).delete(meeting_id)
+        assert time.monotonic() - started < 2
+        assert store.metadata(meeting_id)["id"] == meeting_id
+        assert not (store.root / f".deleting-{meeting_id}").exists()
+        MeetingDeletionService(store).delete(other)
+        release.set()
+        holder.join(timeout=10)
+        assert holder.exitcode == 0 and finished.is_set()
+        original_replace = os.replace
+
+        def verify_lock_during_rename(source, destination):
+            if source == store._meeting_dir(meeting_id):
+                with pytest.raises(TimeoutError):
+                    SharedFileLock(lock_path, shared=True).acquire(timeout=0)
+            return original_replace(source, destination)
+
+        monkeypatch.setattr(meeting_deletion.os, "replace", verify_lock_during_rename)
+        MeetingDeletionService(store).delete(meeting_id)
+        assert not store._meeting_dir(meeting_id).exists()
+        assert lock_path.read_bytes() == b"stable live lock"
+    finally:
+        if holder.is_alive():
+            release.set()
+            holder.join(timeout=5)
+            if holder.is_alive():
+                holder.terminate()
+                holder.join(timeout=5)
 
 
 def test_delete_one_import_preserves_original_export_model_and_other_meeting(tmp_path):

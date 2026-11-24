@@ -24,6 +24,10 @@ def crashed_worker(audio, model, language, output, cancel, start_seconds):
     os._exit(7)
 
 
+def unsafe_error_worker(audio, model, language, output, cancel, start_seconds):
+    output.put({"type": "error", "code": "cuda_vram", "message": "C:\\private\\meeting"})
+
+
 def quick_worker(audio, model, language, output, cancel, start_seconds):
     output.put({"type": "started", "info": {"duration": 1, "language": language}})
     output.put({"type": "segment", "segment": {"id": 1, "start": 0, "end": 1, "text": "Hello"}})
@@ -76,3 +80,24 @@ def test_crash_reports_error_and_retry_succeeds(tmp_path):
     assert job.snapshot().state == "completed"
     assert job.snapshot().segment_count == 1
     assert (prior / "working.json").exists()
+
+
+def test_cuda_worker_crash_is_distinct_and_preserves_previous_work(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAHMM_ASR_DEVICE", "cuda")
+    job, meeting, model_id, prior = prepared_job(tmp_path, crashed_worker)
+    job.start(meeting, model_id)
+    job.wait(10)
+    assert job.snapshot().state == "error"
+    assert job.snapshot().error_code == "cuda_worker_crash"
+    assert "unexpectedly" in job.snapshot().error
+    assert (prior / "working.json").read_text(encoding="utf-8") == "previous edits"
+
+
+def test_job_does_not_trust_worker_error_message(tmp_path):
+    job, meeting, model_id, _ = prepared_job(tmp_path, unsafe_error_worker)
+    job.start(meeting, model_id)
+    job.wait(10)
+    assert job.snapshot().state == "error"
+    assert job.snapshot().error_code == "cuda_vram"
+    assert "GPU memory" in job.snapshot().error
+    assert "private" not in job.snapshot().error

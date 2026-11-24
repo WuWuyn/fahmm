@@ -55,7 +55,7 @@ def main() -> None:
             if progress != last_progress:
                 print(f"Progress: {progress}%", flush=True)
                 last_progress = progress
-            if status["state"] != "running":
+            if status["state"] not in ("running", "cancelling", "saving"):
                 break
             time.sleep(1)
         if status["state"] != "completed":

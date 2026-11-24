@@ -7,7 +7,22 @@ function isRule(line: string): boolean {
 }
 
 function cells(line: string): string[] {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  const body = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const result: string[] = [];
+  let cell = "";
+  for (let index = 0; index < body.length; index++) {
+    const character = body[index];
+    if (character === "\\" && (body[index + 1] === "\\" || body[index + 1] === "|")) {
+      cell += body[++index];
+    } else if (character === "|") {
+      result.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  result.push(cell.trim());
+  return result;
 }
 
 export function MinutesMarkdown({ source }: { source: string }) {

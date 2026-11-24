@@ -12,3 +12,23 @@ it("renders the meeting form tables alongside headings and prose", () => {
   expect(screen.getByRole("cell", { name: "Review demo" })).toBeTruthy();
   expect(screen.getByText("Đã ghi nhận.")).toBeTruthy();
 });
+
+it("keeps escaped pipes and backslashes inside their table cells", () => {
+  const source = [
+    "# Biên bản", "", "Các công việc được ghi nhận:", "",
+    "| Công việc | Ghi chú |",
+    "| --- | --- |",
+    "| Xử lý A \\| B | C:\\\\work\\\\files |",
+    "| Dấu \\\\ và \\| | A\\q |",
+    "", "Nội dung tiếp theo.",
+  ].join("\n");
+  render(<article><MinutesMarkdown source={source} /></article>);
+  expect(screen.getByText("Các công việc được ghi nhận:")).toBeTruthy();
+  expect(screen.getByText("Nội dung tiếp theo.")).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "Xử lý A | B" })).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "C:\\work\\files" })).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "Dấu \\ và |" })).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "A\\q" })).toBeTruthy();
+  expect(screen.getAllByRole("row")).toHaveLength(3);
+  expect(screen.getAllByRole("cell")).toHaveLength(4);
+});

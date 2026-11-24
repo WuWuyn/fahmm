@@ -25,6 +25,10 @@ from fahmm.bridge.protocol import (
 _SAFE_ID = re.compile(CONTRACT["requestIdPattern"])
 
 
+class InferenceBusyError(RuntimeError):
+    """The sidecar is already running another resource-intensive model."""
+
+
 class BridgeApplication:
     """Own service instances for one desktop session; no Qt or network listener."""
 
@@ -35,6 +39,8 @@ class BridgeApplication:
         from fahmm.cloud_minutes import CloudMinutesService
         from fahmm.controller import SessionController
         from fahmm.library import MeetingLibrary
+        from fahmm.live_asr_jobs import LiveASRJobs
+        from fahmm.live_asr_view import LiveASRView
         from fahmm.local_llm import LocalMinutesJobs
         from fahmm.meeting_deletion import MeetingDeletionService
         from fahmm.meeting_export import MeetingExportService
@@ -57,6 +63,8 @@ class BridgeApplication:
         self.library = MeetingLibrary(self.store)
         self.deletion = MeetingDeletionService(self.store)
         self.asr = ASRJobController(self.store, self.models)
+        self.live_asr = LiveASRJobs(self.store, self.models, self.recorder)
+        self.live_view = LiveASRView(self.store)
         self.offline_minutes = OfflineMinutesService(self.store)
         self.local_minutes = LocalMinutesJobs(
             self.store, self.models.root.parent / "local_llm.json"
@@ -69,6 +77,23 @@ class BridgeApplication:
         self._cloud_previews: dict[str, tuple[Any, Any, float]] = {}
         self._media_tickets: dict[str, tuple[str, Path, float]] = {}
         self.handshake_complete = False
+
+    def _require_inference_slot(self, requested: str) -> None:
+        """Avoid running heavy local models concurrently in this sidecar."""
+        live_busy = self.live_asr.snapshot().state in {"starting", "running", "cancelling"}
+        asr_busy = self.asr.snapshot().state in {"loading", "running", "cancelling"}
+        minutes_busy = self.local_minutes.status("_generation")["state"] in {
+            "running",
+            "cancelling",
+            "saving",
+            "worker_stuck",
+        }
+        if (
+            (requested == "live" and (asr_busy or minutes_busy))
+            or (requested == "asr" and (live_busy or minutes_busy))
+            or (requested == "minutes" and (live_busy or asr_busy))
+        ):
+            raise InferenceBusyError("Wait for the current transcription or AI job to stop")
 
     def handle(self, frame: dict[str, Any]) -> dict[str, Any]:
         request_id = frame["id"]
@@ -289,10 +314,12 @@ class BridgeApplication:
             self.models.delete(params["modelId"])
             result = {"deleted": True}
         elif operation == "asr.start":
+            self._require_inference_slot("asr")
             result = {
                 "runId": self.asr.start(params["meetingId"], params["modelId"], params["language"])
             }
         elif operation == "asr.startFrom":
+            self._require_inference_slot("asr")
             result = {
                 "runId": self.asr.start(
                     params["meetingId"],
@@ -305,9 +332,15 @@ class BridgeApplication:
             self.asr.cancel()
             result = {"state": self.asr.snapshot().state}
         elif operation == "asr.retry":
+            self._require_inference_slot("asr")
             result = {"runId": self.asr.retry()}
         elif operation == "asr.status":
+            from fahmm.asr import ASR_ERROR_MESSAGES
+
             snapshot = self.asr.snapshot()
+            error_code = getattr(snapshot, "error_code", None)
+            if snapshot.error and error_code not in ASR_ERROR_MESSAGES:
+                error_code = "asr_failed"
             result = {
                 "state": snapshot.state,
                 "meetingId": snapshot.meeting_id,
@@ -316,8 +349,54 @@ class BridgeApplication:
                 if snapshot.progress is not None
                 else None,
                 "segmentCount": snapshot.segment_count,
-                "error": "Transcription failed" if snapshot.error else None,
+                "error": ASR_ERROR_MESSAGES[error_code] if snapshot.error else None,
+                "errorCode": error_code if snapshot.error else None,
             }
+        elif operation == "live.start":
+            self._require_inference_slot("live")
+            result = {
+                "runId": self.live_asr.start(
+                    params["meetingId"], params["modelId"], params["language"]
+                )
+            }
+        elif operation == "live.resume":
+            self._require_inference_slot("live")
+            result = {"runId": self.live_asr.resume(params["meetingId"], params["runId"])}
+        elif operation == "live.status":
+            from fahmm.asr import ASR_ERROR_MESSAGES
+            from fahmm.live_asr import LIVE_ERRORS
+
+            snapshot = self.live_asr.snapshot()
+            code = snapshot.error_code
+            if code is not None and code not in LIVE_ERRORS and code not in ASR_ERROR_MESSAGES:
+                code = "live_failed"
+            result = {
+                "state": snapshot.state,
+                "meetingId": snapshot.meeting_id,
+                "runId": snapshot.run_id,
+                "cursorSeconds": snapshot.cursor_seconds,
+                "segmentCount": snapshot.segment_count,
+                "provisionalCount": snapshot.provisional_count,
+                "reviewWindows": snapshot.review_windows,
+                "errorCode": code,
+                "captureStatus": snapshot.capture_status,
+                "backlogSeconds": snapshot.backlog_seconds,
+            }
+        elif operation == "live.cancel":
+            result = {"accepted": self.live_asr.cancel(params["meetingId"], params["runId"])}
+        elif operation == "live.runs":
+            result = self.live_view.list_runs(
+                params["meetingId"], after=params["after"], limit=params["limit"]
+            )
+        elif operation == "live.read":
+            result = self.live_view.read_page(
+                params["meetingId"],
+                params["runId"],
+                kind=params["kind"],
+                after=params["after"],
+                limit=params["limit"],
+                latest=params["latest"],
+            )
         elif operation == "minutes.generateOffline":
             result = {
                 "versionId": self.offline_minutes.generate(
@@ -335,10 +414,26 @@ class BridgeApplication:
         elif operation == "llm.pullStatus":
             result = self.local_minutes.status("_pull")
         elif operation == "minutes.generateLocalStart":
-            self.local_minutes.start_generation(params["meetingId"], params["meetingType"])
-            result = {"started": True}
+            self._require_inference_slot("minutes")
+            job_id = self.local_minutes.start_generation(params["meetingId"], params["meetingType"])
+            result = {"started": True, "jobId": job_id}
         elif operation == "minutes.localStatus":
             result = self.local_minutes.status("_generation")
+        elif operation == "minutes.localCheckpoint":
+            result = self.local_minutes.checkpoint_info(params["meetingId"])
+        elif operation == "minutes.resumeLocalStart":
+            self._require_inference_slot("minutes")
+            job_id = self.local_minutes.resume_generation(params["meetingId"])
+            result = {"started": True, "jobId": job_id}
+        elif operation == "minutes.cancelLocal":
+            result = {
+                "accepted": self.local_minutes.cancel_generation(
+                    params["meetingId"], params["jobId"]
+                )
+            }
+        elif operation == "minutes.discardLocalCheckpoint":
+            self.local_minutes.discard_checkpoint(params["meetingId"])
+            result = {"discarded": True}
         elif operation == "cloud.preview":
             snapshot = self.cloud_minutes.prepare(
                 params["meetingId"],
@@ -563,6 +658,10 @@ def serve() -> int:
                 except FrameError as exc:
                     code = str(exc) if str(exc) in CONTRACT["errorCodes"] else "INVALID_REQUEST"
                     response = BridgeApplication._error(request_id, code, "Invalid desktop request")
+                except InferenceBusyError:
+                    response = BridgeApplication._error(
+                        request_id, "RESOURCE_BUSY", "Another local model task is already running"
+                    )
                 except Exception as exc:
                     sys.stderr.write(f"Bridge operation failed: {type(exc).__name__}\n")
                     response = BridgeApplication._error(

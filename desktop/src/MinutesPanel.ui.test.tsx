@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
 import { bridgeCall, exportSaved } from "@/shared/bridge/client";
@@ -21,10 +21,11 @@ let sourceDriftError: boolean;
 let versionReadError: boolean;
 let localAIReady: boolean;
 let localAIError: boolean;
+let localAIStarted: boolean;
 beforeEach(() => {
   versionId = null; previewCount = 0; minutesOrigin = "extractive"; sourceOrigin = "extractive";
   domainMode = false; extraVersionId = null; activeTranscript = [{ id: 1, start: 0, end: 1, text: "Xin chào" }];
-  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false; localAIReady = false; localAIError = false;
+  generationError = false; generationGate = null; sourceDriftError = false; versionReadError = false; localAIReady = false; localAIError = false; localAIStarted = false;
   vi.mocked(bridgeCall).mockImplementation(async (operation) => {
     switch (operation) {
       case "minutes.list": return { versions: [versionId, extraVersionId].filter(Boolean).map((id) => ({ version_id: id, created_at: "2026-11-14T00:00:00Z", review_state: "unverified", origin: minutesOrigin, source_origin: sourceOrigin })), activeVersionId: versionId };
@@ -51,8 +52,10 @@ beforeEach(() => {
       case "provider.list": return { profiles: [{ id: "p".repeat(32), name: "Provider", model_id: "model", hasKey: false }] };
       case "llm.availability": return { connected: localAIReady, models: localAIReady ? ["qwen3:4b-instruct"] : [],
         selectedModel: "qwen3:4b-instruct", ready: localAIReady };
-      case "minutes.generateLocalStart": return { started: true };
+      case "minutes.generateLocalStart": localAIStarted = true; return { started: true, jobId: "j".repeat(32) };
+      case "minutes.localCheckpoint": return { available: false, meetingType: null, progress: 0, error: null };
       case "minutes.localStatus":
+        if (!localAIStarted) return { state: "idle", progress: 0, error: null, versionId: null, meetingId: null };
         if (localAIError) return { state: "failed", progress: 0, error: "Model failed", versionId: null };
         versionId = "l".repeat(32); minutesOrigin = "local_llm";
         return { state: "completed", progress: 1, error: null, versionId };
@@ -115,6 +118,72 @@ it("uses installed local AI for the one-click minutes action and labels its orig
     { timeout: 3000 });
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateLocalStart")).toBe(true);
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
+});
+
+it("explains when another model task prevents starting AI minutes", async () => {
+  localAIReady = true;
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.generateLocalStart") throw new Error("RESOURCE_BUSY");
+    return fallback(operation, params);
+  });
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await screen.findByText(/Write the DENSO form/);
+  await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
+  expect(await screen.findByText("Wait for the current transcription or AI job to finish.")).toBeTruthy();
+});
+
+it("resumes saved AI progress and lets the user stop the running request", async () => {
+  localAIReady = true;
+  let resumed = false;
+  let stopped = false;
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.localCheckpoint") return { available: true, meetingType: "general", progress: 0.35, error: null };
+    if (operation === "minutes.resumeLocalStart") { resumed = true; return { started: true, jobId: "j".repeat(32) }; }
+    if (operation === "minutes.cancelLocal") { stopped = true; return { accepted: true }; }
+    if (operation === "minutes.localStatus") return {
+      state: stopped ? "cancelled" : resumed ? "running" : "idle",
+      progress: 0.35, error: null, versionId: null, meetingId: resumed ? "a".repeat(32) : null, jobId: resumed ? "j".repeat(32) : null,
+    };
+    return fallback(operation, params);
+  });
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted" onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Resume AI generation" }));
+  await user.click(await screen.findByRole("button", { name: "Stop AI generation" }));
+  expect(await screen.findByText("AI generation stopped. Saved progress can be resumed.", {}, { timeout: 3000 })).toBeTruthy();
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.resumeLocalStart")).toBe(true);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.cancelLocal")).toBe(true);
+  expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
+});
+
+it("ignores a late checkpoint response from a different meeting", async () => {
+  localAIReady = true;
+  let release!: (value: unknown) => void;
+  const first = new Promise((resolve) => { release = resolve; });
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.localCheckpoint") {
+      if (params?.meetingId === "a".repeat(32)) return first;
+      return { available: false, meetingType: null, progress: 0, error: null };
+    }
+    return fallback(operation, params);
+  });
+  const panel = (meetingId: string) => <MinutesPanel meetingId={meetingId} privacyMode="restricted"
+    onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />;
+  const { rerender } = render(panel("a".repeat(32)));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.some(([op, params]) =>
+    op === "minutes.localCheckpoint" && params?.meetingId === "a".repeat(32))).toBe(true));
+  rerender(panel("b".repeat(32)));
+  await waitFor(() => expect(vi.mocked(bridgeCall).mock.calls.some(([op, params]) =>
+    op === "minutes.localCheckpoint" && params?.meetingId === "b".repeat(32))).toBe(true));
+  await act(async () => {
+    release({ available: true, meetingType: "general", progress: 0.5, error: null });
+    await first;
+  });
+  expect(screen.queryByRole("button", { name: "Resume AI generation" })).toBeNull();
 });
 
 it("creates a source-linked extractive draft when local AI is available", async () => {
@@ -268,7 +337,7 @@ it("keeps unsaved domain edits when regeneration is cancelled", async () => {
   await waitFor(() => expect(screen.getAllByText("Unsaved edits").length).toBeGreaterThan(0));
   await user.click(screen.getByRole("button", { name: "Generate meeting minutes" }));
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.generateOffline")).toBe(false);
-  expect((screen.getByRole("textbox", { name: "Objective" }) as HTMLInputElement).value).toBe("Reviewrollout");
+  expect((screen.getByRole("textbox", { name: "Objective" }) as HTMLInputElement).value).toBe("Review rollout");
 });
 
 it("omits the redundant source list while keeping claim-level playback links", async () => {
@@ -282,7 +351,7 @@ it("omits the redundant source list while keeping claim-level playback links", a
   await user.click(await screen.findByRole("button", { name: "Topics" }));
   expect(screen.queryByText("Source timestamps")).toBeNull();
   await user.click(screen.getByRole("button", { name: /Seek source segment 1/ }));
-  expect(onSeek).toHaveBeenCalledWith(0);
+  expect(onSeek).not.toHaveBeenCalled();
   expect(onOpenSource).toHaveBeenCalledWith("r".repeat(32), 0);
 });
 
@@ -344,7 +413,7 @@ it("copies the saved Markdown only after warning about dirty edits", async () =>
   });
   await user.click(screen.getByRole("button", { name: "Copy Markdown" }));
   await waitFor(() => expect(copy).toHaveBeenCalledWith("Saved Markdown"));
-  expect(screen.queryByText("Unsaved edits")).toBeNull();
+  expect(screen.getByText("Unsaved edits")).toBeTruthy();
   expect(vi.mocked(exportSaved)).not.toHaveBeenCalled();
 });
 
@@ -379,4 +448,93 @@ it("keeps a dirty domain draft when version switching is cancelled", async () =>
   await user.selectOptions(screen.getByLabelText("Saved version"), extraVersionId);
   expect(vi.mocked(bridgeCall).mock.calls.some(([operation]) => operation === "minutes.select")).toBe(false);
   expect((screen.getByLabelText("Saved version") as HTMLSelectElement).value).toBe(versionId);
+});
+
+
+it("previews the draft, keeps it through transcript refresh, then saves and exports the new version", async () => {
+  versionId = "m".repeat(32);
+  const user = userEvent.setup();
+  let savedBody = "";
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.edit") {
+      savedBody = (params?.content as { user_text: string }).user_text;
+      versionId = "n".repeat(32);
+      return { versionId };
+    }
+    if (operation === "minutes.renderBody" && savedBody) return { markdown: savedBody };
+    return fallback(operation, params);
+  });
+  vi.mocked(exportSaved).mockResolvedValue({ saved: true, displayName: "minutes.md" });
+  const panel = (runVersion: number) => <MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
+    onPrivacyChange={() => {}} onSeek={() => {}} runVersion={runVersion} />;
+  const { rerender } = render(panel(0));
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  await user.clear(screen.getByRole("textbox", { name: "Edit minutes Markdown" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), "A reviewed draft");
+  await user.click(screen.getByRole("button", { name: "Preview" }));
+  expect(screen.getByRole("article").textContent).toContain("A reviewed draft");
+  expect(screen.getByRole("button", { name: "Save new version" })).toHaveProperty("disabled", false);
+  rerender(panel(1));
+  await user.click(screen.getByRole("button", { name: "Save new version" }));
+  await waitFor(() => expect(savedBody).toBe("A reviewed draft"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save new version" })).toHaveProperty("disabled", true));
+  await user.click(screen.getByRole("button", { name: "Export MD" }));
+  expect(vi.mocked(exportSaved)).toHaveBeenCalledWith("a".repeat(32), "n".repeat(32), "minutes");
+});
+
+it("retains both drafts when either conflicting save is declined", async () => {
+  domainMode = true; versionId = "m".repeat(32);
+  vi.stubGlobal("confirm", vi.fn(() => false));
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
+    onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByText("Edit meeting details and notes"));
+  await user.type(screen.getByRole("textbox", { name: "Participants (comma separated)" }), "An Nguyen, Bao Tran");
+  expect(screen.getByRole("textbox", { name: "Participants (comma separated)" })).toHaveProperty("value", "An Nguyen, Bao Tran");
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), " changed");
+  await user.click(screen.getByRole("button", { name: "Save new version" }));
+  await user.click(screen.getByRole("button", { name: "Save notes as new version" }));
+  expect(vi.mocked(bridgeCall).mock.calls.some(([op]) => op === "minutes.edit" || op === "minutes.editDomain")).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Participants (comma separated)" })).toHaveProperty("value", "An Nguyen, Bao Tran");
+  expect((screen.getByRole("textbox", { name: "Edit minutes Markdown" }) as HTMLTextAreaElement).value).toContain("changed");
+});
+
+it("keeps the unsaved draft when selecting another version fails", async () => {
+  versionId = "m".repeat(32); extraVersionId = "n".repeat(32);
+  vi.stubGlobal("confirm", vi.fn(() => true));
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.select") throw new Error("select failed");
+    return fallback(operation, params);
+  });
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
+    onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), " retained");
+  await user.selectOptions(screen.getByLabelText("Saved version"), extraVersionId);
+  expect(await screen.findByText("Could not select this minutes version.")).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: "Edit minutes Markdown" }) as HTMLTextAreaElement).value).toContain("retained");
+});
+
+
+it("reports a successful edit even if refreshing the version list fails", async () => {
+  versionId = "m".repeat(32);
+  let didSave = false;
+  const fallback = vi.mocked(bridgeCall).getMockImplementation()!;
+  vi.mocked(bridgeCall).mockImplementation(async (operation, params) => {
+    if (operation === "minutes.list" && didSave) throw new Error("list unavailable");
+    if (operation === "minutes.edit") { didSave = true; versionId = "n".repeat(32); return { versionId }; }
+    return fallback(operation, params);
+  });
+  const user = userEvent.setup();
+  render(<MinutesPanel meetingId={"a".repeat(32)} privacyMode="restricted"
+    onPrivacyChange={() => {}} onSeek={() => {}} runVersion={0} />);
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  await user.type(screen.getByRole("textbox", { name: "Edit minutes Markdown" }), " change");
+  await user.click(screen.getByRole("button", { name: "Save new version" }));
+  expect(await screen.findByText("Minutes saved, but the list could not refresh. Reopen this meeting to view them.")).toBeTruthy();
+  expect(vi.mocked(bridgeCall).mock.calls.filter(([op]) => op === "minutes.edit")).toHaveLength(1);
 });

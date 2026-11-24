@@ -85,8 +85,8 @@ def test_semantic_minutes_use_existing_form_and_exact_transcript_sources(tmp_pat
     assert saved["content"]["format"] == "denso_warehouse"
     assert sections["project_actions"][0]["sources"][0]["segment_id"] == 1
     markdown = MeetingExportService(meetings).minutes_markdown(meeting_id, version_id)
-    assert "## 6. Công việc phía nhóm dự án FPT triển khai" in markdown
-    assert "| Công việc cụ thể | Thời hạn |" in markdown
+    assert "## 6. Công việc phía nhóm dự án" in markdown
+    assert "| Công việc | Người phụ trách | Thời hạn |" in markdown
     assert "(Nguồn:" not in markdown
     assert "Local Ollama DENSO-form draft" in markdown
     edited = MinutesStore(meetings).edit_version(meeting_id, version_id, saved["content"])
@@ -442,13 +442,12 @@ def test_bridge_starts_background_local_minutes_and_returns_saved_version(tmp_pa
         [{"id": 1, "start": 0.0, "end": 2.0, "text": "Đã thống nhất thử nghiệm."}],
     )
     assert call(app, "llm.availability")["ready"] is True
-    assert call(app, "minutes.generateLocalStart", meetingId=meeting_id, meetingType="general") == {
-        "started": True
-    }
+    started = call(app, "minutes.generateLocalStart", meetingId=meeting_id, meetingType="general")
+    assert started["started"] is True and len(started["jobId"]) == 32
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         status = call(app, "minutes.localStatus")
-        if status["state"] != "running":
+        if status["state"] not in ("running", "saving"):
             break
         time.sleep(0.02)
     assert status["state"] == "completed", status

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -18,9 +21,18 @@ import av
 import numpy as np
 import psutil
 
+if __package__:
+    from .benchmark_memory import MIB, MemoryGuard, MemoryPolicy, MemoryWatchdog
+else:
+    from benchmark_memory import MIB, MemoryGuard, MemoryPolicy, MemoryWatchdog
+
 ROOT = Path(__file__).resolve().parents[1]
-SIDECAR = ROOT / ".build/Fahmm_So_Sanh_Model/fahmm-sidecar.exe"
-USER_ROOT = Path(os.environ["LOCALAPPDATA"]) / "fahmm"
+SIDECAR = Path(
+    os.environ.get(
+        "FAHMM_BENCHMARK_SIDECAR", str(ROOT / ".build/Fahmm_So_Sanh_Model/fahmm-sidecar.exe")
+    )
+)
+USER_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "fahmm"
 SOURCE = USER_ROOT / "demo/retail-requirements-60m.mp3"
 RUN = (
     ROOT
@@ -29,6 +41,35 @@ RUN = (
 )
 TARGET_SAMPLES = 70 * 60 * 16000
 NUMBER_CPUS = psutil.cpu_count() or 1
+MEMORY_POLICY = MemoryPolicy()
+
+
+def _available_memory() -> int | None:
+    try:
+        return psutil.virtual_memory().available
+    except (OSError, psutil.Error):
+        return None
+
+
+def _stop_owned_sidecar(root: psutil.Process, known_children=()) -> None:
+    """Stop only the sidecar process created by this benchmark and its descendants."""
+    children = list(known_children)
+    try:
+        if root.is_running():
+            children.extend(root.children(recursive=True))
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    try:
+        for child in reversed(children):
+            try:
+                if child.is_running():
+                    child.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        if root.is_running():
+            root.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
 
 
 def prepare_audio(destination: Path) -> dict:
@@ -73,6 +114,12 @@ def find_ollama_server() -> int:
 class Monitor:
     def __init__(self, sidecar_pid: int, ollama_pid: int, output: Path):
         self.sidecar_pid, self.ollama_pid = sidecar_pid, ollama_pid
+        # The psutil object retains creation identity, preventing PID reuse from
+        # turning a later abort into a signal to a different application.
+        self.owned_sidecar = psutil.Process(sidecar_pid)
+        self.ollama = psutil.Process(ollama_pid)
+        self._owned_lock = threading.Lock()
+        self._owned_children = {}
         self.output = output
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -81,18 +128,33 @@ class Monitor:
         self.last_cpu: dict[tuple[int, float], tuple[float, float]] = {}
         self.start_time = time.monotonic()
         self.gpu = None
-        self.low_memory_since = None
         self.memory_abort = False
+        self.memory_abort_reason = None
+        self.watchdog = MemoryWatchdog(MEMORY_POLICY, _available_memory, self._abort_owned)
         self.thread = threading.Thread(target=self.run, daemon=True)
         psutil.cpu_percent(None)
+        self.watchdog.start()
         self.thread.start()
+
+    def _abort_owned(self, reason: str) -> None:
+        self.memory_abort_reason = reason
+        self.memory_abort = True
+        with self._owned_lock:
+            children = list(self._owned_children.values())
+        _stop_owned_sidecar(self.owned_sidecar, children)
+
+    def _remember_owned(self, children) -> None:
+        with self._owned_lock:
+            for child in children:
+                try:
+                    self._owned_children[(child.pid, child.create_time())] = child
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
 
     def set_phase(self, phase):
         with self.lock:
             self.phase = phase
             self.last_cpu = {}
-            self.low_memory_since = None
-            self.memory_abort = False
 
     def run(self):
         tick = 0
@@ -107,8 +169,13 @@ class Monitor:
                     procs = {}
                     for root in roots:
                         try:
-                            parent = psutil.Process(root)
-                            for proc in [parent, *parent.children(recursive=True)]:
+                            parent = self.owned_sidecar if root == self.sidecar_pid else self.ollama
+                            if not parent.is_running():
+                                continue
+                            descendants = parent.children(recursive=True)
+                            if root == self.sidecar_pid:
+                                self._remember_owned(descendants)
+                            for proc in [parent, *descendants]:
                                 procs[proc.pid] = proc
                         except (psutil.NoSuchProcess, psutil.AccessDenied):
                             pass
@@ -166,12 +233,6 @@ class Monitor:
                     self.samples.append(sample)
                     log.write(json.dumps(sample, ensure_ascii=False) + "\n")
                     log.flush()
-                    if memory.available < 500 * 1024**2:
-                        self.low_memory_since = self.low_memory_since or now
-                        if now - self.low_memory_since >= 15:
-                            self.memory_abort = True
-                    else:
-                        self.low_memory_since = None
 
     def summary(self, phase, seconds):
         with self.lock:
@@ -200,6 +261,7 @@ class Monitor:
     def stop(self):
         self.stop_event.set()
         self.thread.join(timeout=5)
+        self.watchdog.stop()
 
 
 def main():
@@ -216,6 +278,24 @@ def main():
         or local_model.endswith(":cloud")
     ):
         raise RuntimeError("Model hiện chọn không hợp lệ hoặc không phải model cục bộ.")
+    wait_started = time.monotonic()
+    last_notice = 0
+    while True:
+        available = _available_memory()
+        reason = MemoryGuard(MEMORY_POLICY).preflight(available)
+        if reason is None:
+            break
+        if reason == "memory_sample_unavailable":
+            raise MemoryError("Không đọc được RAM khả dụng; không bắt đầu benchmark.")
+        if time.monotonic() - wait_started > 900:
+            raise MemoryError("Không đủ RAM khả dụng sau 15 phút chờ.")
+        if time.monotonic() - last_notice >= 30:
+            print(
+                f"Chờ RAM: còn {available / MIB:.0f} MiB, cần {MEMORY_POLICY.start_mib} MiB.",
+                flush=True,
+            )
+            last_notice = time.monotonic()
+        time.sleep(2)
     RUN.mkdir(parents=True)
     if shutil.disk_usage(RUN).free < selected["bytes"] + 1024**3:
         raise RuntimeError("Không đủ dung lượng ổ D cho bản sao model và âm thanh thử.")
@@ -239,19 +319,8 @@ def main():
         json.dumps({"model": local_model}), encoding="utf-8"
     )
     ollama_pid = find_ollama_server()
-    wait_started = time.monotonic()
-    last_notice = 0
-    while True:
-        minimum_gib = 2.0 if (RUN / "allow-current-ram").exists() else 3.5
-        available_gib = psutil.virtual_memory().available / 1024**3
-        if available_gib >= minimum_gib:
-            break
-        if time.monotonic() - wait_started > 900:
-            raise MemoryError(f"Không đủ RAM sau 15 phút chờ; hiện còn {available_gib:.2f} GiB.")
-        if time.monotonic() - last_notice >= 30:
-            print(f"Chờ RAM: còn {available_gib:.2f} GiB, cần {minimum_gib:.1f} GiB.", flush=True)
-            last_notice = time.monotonic()
-        time.sleep(2)
+    if MemoryGuard(MEMORY_POLICY).preflight(_available_memory()) is not None:
+        raise MemoryError("RAM khả dụng đã giảm; không khởi chạy bộ xử lý.")
     env = dict(os.environ, LOCALAPPDATA=str(appdata), TEMP=str(RUN), TMP=str(RUN))
     stderr = (RUN / "sidecar.stderr.log").open("w", encoding="utf-8")
     process = subprocess.Popen(
@@ -265,6 +334,7 @@ def main():
     )
     sequence = 0
     monitor = None
+    replies: queue.Queue[str] = queue.Queue(maxsize=4)
     report = {
         "input": audio_info,
         "asr_model": selected["repository"],
@@ -272,7 +342,21 @@ def main():
         "logical_cpus": NUMBER_CPUS,
         "source_kind": "synthetic 60 minutes + repeated first 10 minutes",
         "scope": "frozen sidecar process tree; local Ollama server tree during minutes; desktop UI excluded",
+        "memory_guard": MEMORY_POLICY.as_dict(),
     }
+
+    def pump_replies():
+        try:
+            while True:
+                line = process.stdout.readline()
+                replies.put(line, timeout=2)
+                if not line:
+                    return
+        except (OSError, ValueError, queue.Full):
+            return
+
+    reader = threading.Thread(target=pump_replies, daemon=True)
+    reader.start()
 
     def save():
         (RUN / "results.json").write_text(
@@ -285,7 +369,20 @@ def main():
         frame = {"v": 1, "kind": "request", "id": str(sequence), "op": op, "params": params}
         process.stdin.write(json.dumps(frame, ensure_ascii=False) + "\n")
         process.stdin.flush()
-        line = process.stdout.readline()
+        deadline = time.monotonic() + 120
+        while True:
+            if monitor is not None and monitor.memory_abort:
+                raise MemoryError(
+                    f"Benchmark stopped by RAM watchdog: {monitor.memory_abort_reason}"
+                )
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Bộ xử lý không phản hồi trong thời gian cho phép.")
+            try:
+                line = replies.get(timeout=MEMORY_POLICY.sample_seconds)
+                break
+            except queue.Empty:
+                if process.poll() is not None:
+                    raise RuntimeError("Bộ xử lý đã đóng trước khi phản hồi.") from None
         if not line:
             raise RuntimeError("Bộ xử lý đóng trước khi phản hồi.")
         result = json.loads(line)
@@ -294,6 +391,9 @@ def main():
         return result["result"]
 
     try:
+        # The watchdog starts immediately, before handshake, import or inference.
+        monitor = Monitor(process.pid, ollama_pid, RUN / "samples.jsonl")
+        monitor.set_phase("startup")
         call("session.hello", {"versions": [1]})
         availability = call("llm.availability", {})
         if not availability.get("ready") or availability.get("selectedModel") != local_model:
@@ -302,7 +402,6 @@ def main():
         print(
             "Đã sẵn sàng; phiên âm:", selected["repository"], "| biên bản:", local_model, flush=True
         )
-        monitor = Monitor(process.pid, ollama_pid, RUN / "samples.jsonl")
         monitor.set_phase("transcription")
         start = time.monotonic()
         call("asr.start", {"meetingId": meeting, "modelId": model_id, "language": "vi"})
@@ -321,9 +420,6 @@ def main():
                     flush=True,
                 )
                 last_message = time.monotonic()
-            if monitor.memory_abort and state["state"] in ("loading", "running"):
-                call("asr.cancel", {})
-                print("Đã yêu cầu hủy vì RAM còn dưới 500 MiB quá 15 giây.", flush=True)
             if state["state"] not in ("loading", "running", "cancelling"):
                 break
         report["transcription"] = {
@@ -347,7 +443,10 @@ def main():
             )
         monitor.set_phase("minutes")
         start = time.monotonic()
-        call("minutes.generateLocalStart", {"meetingId": meeting, "meetingType": "general"})
+        started = call(
+            "minutes.generateLocalStart", {"meetingId": meeting, "meetingType": "general"}
+        )
+        job_id = started.get("jobId")
         last_message = 0
         while True:
             time.sleep(2)
@@ -356,14 +455,35 @@ def main():
                 print("Biên bản:", state["state"], "tiến độ:", state["progress"], flush=True)
                 last_message = time.monotonic()
             if monitor.memory_abort:
-                raise MemoryError("Dừng thử vì RAM còn dưới 500 MiB quá 15 giây.")
-            if state["state"] != "running":
+                report["minutes"] = {
+                    **monitor.summary("minutes", time.monotonic() - start),
+                    "state": state["state"],
+                    "job_id": job_id,
+                    "error": state.get("error"),
+                }
+                raise MemoryError(f"Dừng thử do RAM: {monitor.memory_abort_reason}")
+            if state["state"] not in ("running", "cancelling", "saving"):
                 break
         report["minutes"] = {
             **monitor.summary("minutes", time.monotonic() - start),
             "state": state["state"],
+            "job_id": job_id,
             "error": state.get("error"),
         }
+        if isinstance(job_id, str) and re.fullmatch(r"[0-9a-f]{32}", job_id):
+            metric_path = (
+                appdata
+                / "fahmm"
+                / "meetings"
+                / meeting
+                / "minutes"
+                / "ai-metrics"
+                / f"{job_id}.json"
+            )
+            if metric_path.is_file():
+                report["minutes"]["runtime_metrics"] = json.loads(
+                    metric_path.read_text(encoding="utf-8")
+                )
         save()
         print("Kết quả biên bản:", json.dumps(report["minutes"], ensure_ascii=False), flush=True)
         if state["state"] != "completed":
@@ -373,18 +493,40 @@ def main():
     except Exception as exc:
         report["completed"] = False
         report["error"] = str(exc)
+        if monitor is not None:
+            report["memory_guard"]["stop_reason"] = monitor.memory_abort_reason
+            minimum = monitor.watchdog.minimum_available
+            report["memory_guard"]["minimum_sampled_available_mib"] = (
+                round(minimum / MIB, 1) if minimum is not None else None
+            )
         save()
         raise
     finally:
-        if monitor:
-            monitor.stop()
         if process.stdin:
-            process.stdin.close()
+            with contextlib.suppress(BrokenPipeError, OSError):
+                process.stdin.close()
         try:
             process.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            process.terminate()
+            if monitor is not None:
+                with monitor._owned_lock:
+                    children = list(monitor._owned_children.values())
+                _stop_owned_sidecar(monitor.owned_sidecar, children)
+            if process.poll() is None:
+                process.terminate()
             process.wait(timeout=10)
+        if monitor:
+            with monitor._owned_lock:
+                children = list(monitor._owned_children.values())
+            _stop_owned_sidecar(monitor.owned_sidecar, children)
+            monitor.stop()
+            minimum = monitor.watchdog.minimum_available
+            report["memory_guard"]["stop_reason"] = monitor.memory_abort_reason
+            report["memory_guard"]["minimum_sampled_available_mib"] = (
+                round(minimum / MIB, 1) if minimum is not None else None
+            )
+            save()
+        reader.join(timeout=1)
         stderr.close()
 
 

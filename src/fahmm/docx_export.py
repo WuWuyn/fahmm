@@ -66,7 +66,29 @@ def _table(body: ET.Element, rows: list[list[str]]) -> None:
 
 
 def _table_row(line: str) -> list[str]:
-    return [part.strip() for part in line.strip().strip("|").split("|")]
+    """Split a Markdown table row while preserving escaped pipes and slashes."""
+    text = line.strip().removeprefix("|")
+    # A final escaped pipe is cell content, not a closing table delimiter.
+    trailing_slashes = len(text[:-1]) - len(text[:-1].rstrip("\\")) if text.endswith("|") else 0
+    if text.endswith("|") and trailing_slashes % 2 == 0:
+        text = text[:-1]
+    cells: list[str] = []
+    current: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text) and text[index + 1] in {"\\", "|"}:
+            current.append(text[index + 1])
+            index += 2
+        elif char == "|":
+            cells.append("".join(current).strip())
+            current = []
+            index += 1
+        else:
+            current.append(char)
+            index += 1
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _is_table_rule(line: str) -> bool:

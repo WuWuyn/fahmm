@@ -8,7 +8,15 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from fahmm.asr import WhisperASRBackend, _runtime_settings
+from fahmm.asr import (
+    ASR_ERROR_MESSAGES,
+    ASRRuntimeError,
+    WhisperASRBackend,
+    _check_cuda_libraries,
+    _check_cuda_runtime,
+    _cuda_error_code,
+    _runtime_settings,
+)
 from fahmm.asr_worker import run_asr_worker
 from fahmm.models import ModelManager
 
@@ -115,6 +123,7 @@ def test_asr_passes_opt_in_cuda_and_beam_to_whisper(tmp_path, monkeypatch):
     monkeypatch.setenv("FAHMM_ASR_COMPUTE_TYPE", "int8_float16")
     monkeypatch.setenv("FAHMM_ASR_BEAM_SIZE", "1")
     monkeypatch.setattr("fahmm.asr.validate_model_dir", lambda path: None)
+    monkeypatch.setattr("fahmm.asr._check_cuda_runtime", lambda compute_type: None)
     monkeypatch.setattr("faster_whisper.audio.decode_audio", lambda path: np.ones(16_000))
     observed = {}
 
@@ -143,6 +152,7 @@ def test_cuda_initialization_error_is_reported_without_cpu_fallback(tmp_path, mo
     monkeypatch.delenv("FAHMM_ASR_COMPUTE_TYPE", raising=False)
     monkeypatch.delenv("FAHMM_ASR_BEAM_SIZE", raising=False)
     monkeypatch.setattr("fahmm.asr.validate_model_dir", lambda path: None)
+    monkeypatch.setattr("fahmm.asr._check_cuda_runtime", lambda compute_type: None)
     monkeypatch.setattr("faster_whisper.audio.decode_audio", lambda path: np.ones(16_000))
     attempted = []
 
@@ -152,9 +162,82 @@ def test_cuda_initialization_error_is_reported_without_cpu_fallback(tmp_path, mo
             raise RuntimeError("CUDA runtime unavailable")
 
     monkeypatch.setattr("faster_whisper.WhisperModel", UnavailableCudaModel)
-    with pytest.raises(RuntimeError, match="CUDA runtime unavailable"):
+    with pytest.raises(ASRRuntimeError, match="CUDA libraries are missing") as error:
         WhisperASRBackend().transcribe(audio_path, tmp_path)
+    assert error.value.code == "cuda_runtime"
     assert attempted == ["cuda"]
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        ("CUDA driver version is insufficient", "cuda_driver"),
+        ("Library cublas64_12.dll not found at C:\\private\\file", "cuda_cublas"),
+        ("Library cudnn64_9.dll not found at C:\\private\\file", "cuda_cudnn"),
+        ("CUDNN_STATUS_ALLOC_FAILED", "cuda_vram"),
+        ("CUDA_ERROR_OUT_OF_MEMORY", "cuda_vram"),
+        ("Requested compute type is not supported", "cuda_compute"),
+        ("Unrecognized error with secret C:\\private", "cuda_failed"),
+    ],
+)
+def test_cuda_error_categories_do_not_publish_private_exception_text(message, code):
+    assert _cuda_error_code(RuntimeError(message)) == code
+    public = str(ASRRuntimeError(code))
+    assert public == ASR_ERROR_MESSAGES[code]
+    assert "private" not in public and "secret" not in public
+
+
+def test_cuda_runtime_checks_device_and_supported_compute_type(monkeypatch):
+    monkeypatch.setattr("ctranslate2.get_cuda_device_count", lambda: 0)
+    with pytest.raises(ASRRuntimeError) as error:
+        _check_cuda_runtime("int8_float16")
+    assert error.value.code == "cuda_driver"
+
+    monkeypatch.setattr("ctranslate2.get_cuda_device_count", lambda: 1)
+    monkeypatch.setattr("fahmm.asr._check_cuda_libraries", lambda: None)
+    monkeypatch.setattr("ctranslate2.get_supported_compute_types", lambda device: {"float16"})
+    with pytest.raises(ASRRuntimeError) as error:
+        _check_cuda_runtime("int8_float16")
+    assert error.value.code == "cuda_compute"
+
+    monkeypatch.setattr("ctranslate2.get_supported_compute_types", lambda device: {"int8_float16"})
+    _check_cuda_runtime("int8_float16")
+
+
+@pytest.mark.parametrize(
+    ("missing", "code"), [("cublas64_12.dll", "cuda_cublas"), ("cudnn64_9.dll", "cuda_cudnn")]
+)
+def test_missing_cuda_library_is_reported_without_path(monkeypatch, missing, code):
+    def missing_library(name, **kwargs):
+        if name == missing:
+            raise OSError("C:\\private\\dependency.dll is missing")
+
+    monkeypatch.setattr("ctypes.WinDLL", missing_library, raising=False)
+    with pytest.raises(ASRRuntimeError) as error:
+        _check_cuda_libraries()
+    assert error.value.code == code
+    assert "private" not in str(error.value)
+
+
+def test_worker_sanitizes_cuda_and_unknown_failures():
+    class FakeBackend:
+        def __init__(self, error):
+            self.error = error
+
+        def transcribe(self, *args):
+            raise self.error
+
+    for error, code in (
+        (ASRRuntimeError("cuda_vram"), "cuda_vram"),
+        (FileNotFoundError("Saved meeting audio is missing"), "audio_missing"),
+        (RuntimeError("private meeting C:\\private"), "asr_failed"),
+    ):
+        output = queue.Queue()
+        cancel = multiprocessing.get_context("spawn").Event()
+        run_asr_worker("audio", "model", "vi", output, cancel, backend=FakeBackend(error))
+        item = output.get_nowait()
+        assert item == {"type": "error", "code": code, "message": ASR_ERROR_MESSAGES[code]}
+        assert "private" not in item["message"]
 
 
 def test_spawned_worker_transcribes_local_speech_without_network():

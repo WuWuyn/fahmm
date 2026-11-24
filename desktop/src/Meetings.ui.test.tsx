@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Meetings } from "@/features/meetings/Meetings";
@@ -10,8 +11,11 @@ vi.mock("@/features/meetings/AudioPlayer", () => ({ AudioPlayer: ({ meetingId, s
   <div>Player {meetingId} {seekTo?.seconds ?? ""}</div> }));
 vi.mock("@/features/transcript/TranscriptPanel", () => ({ TranscriptPanel: ({ onSeek }: { onSeek: (seconds: number) => void }) =>
   <button onClick={() => onSeek(12)}>Seek transcript source</button> }));
-vi.mock("@/features/minutes/MinutesPanel", () => ({ MinutesPanel: ({ onOpenSource }: { onOpenSource: (run: string, seconds: number) => void }) =>
-  <button onClick={() => onOpenSource("r".repeat(32), 21)}>Open minutes source</button> }));
+vi.mock("@/features/minutes/MinutesPanel", () => ({ MinutesPanel: ({ onOpenSource, onDirtyChange }: { onOpenSource: (run: string, seconds: number) => void; onDirtyChange: (dirty: boolean) => void }) => {
+  const [draft, setDraft] = useState("");
+  return <><button onClick={() => onOpenSource("r".repeat(32), 21)}>Open minutes source</button>
+    <textarea aria-label="Minutes draft" value={draft} onChange={(event) => { setDraft(event.target.value); onDirtyChange(!!event.target.value); }} /></>;
+} }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("opens an existing offline meeting, imports audio, and navigates to saved source without a path", async () => {
@@ -71,4 +75,34 @@ it("offers the local 60-minute sample and opens its imported meeting", async () 
   expect(screen.getByRole("textbox", { name: "Search meetings" })).toHaveProperty("value", "");
   expect(screen.getByText(`Player ${sample.id}`)).toBeTruthy();
   expect(vi.mocked(importDemoAudio)).toHaveBeenCalledOnce();
+});
+
+
+it("preserves minutes across tabs and protects them when opening a newly recorded meeting", async () => {
+  const first = { id: "a".repeat(32), name: "First meeting", created_at: "2026-11-14T00:00:00Z",
+    source_kind: "recorded", recording_state: "completed", processing_state: "completed", privacy_mode: "restricted" };
+  const recorded = { ...first, id: "b".repeat(32), name: "New recording" };
+  let meetings = [first];
+  vi.mocked(demoAudioAvailable).mockResolvedValue(false);
+  vi.mocked(bridgeCall).mockImplementation(async (operation) => {
+    if (operation === "meeting.list") return { meetings };
+    if (operation === "meeting.cleanupList") return { deletions: [], imports: [] };
+    throw new Error(`Unexpected operation ${operation}`);
+  });
+  const user = userEvent.setup();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const { rerender } = render(<Meetings backendReady visible />);
+  await screen.findByText("First meeting", { selector: "h2" });
+  await user.click(screen.getByRole("tab", { name: "Minutes" }));
+  await user.type(screen.getByRole("textbox", { name: "Minutes draft" }), "Preserve this");
+  await user.click(screen.getByRole("tab", { name: "Transcript" }));
+  await user.click(screen.getByRole("tab", { name: "Minutes" }));
+  expect(screen.getByRole("textbox", { name: "Minutes draft" })).toHaveProperty("value", "Preserve this");
+  rerender(<Meetings backendReady visible={false} />);
+  meetings = [first, recorded];
+  rerender(<Meetings backendReady visible openMeetingId={recorded.id} />);
+  await waitFor(() => expect(confirm).toHaveBeenCalled());
+  expect(screen.getByText("First meeting", { selector: "h2" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Minutes draft" })).toHaveProperty("value", "Preserve this");
+  confirm.mockRestore();
 });

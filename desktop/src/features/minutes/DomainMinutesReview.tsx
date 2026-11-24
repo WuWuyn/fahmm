@@ -15,6 +15,7 @@ export type DomainClaim = { item_id: string; text: string; sources: DomainSource
 export type DomainField = { value: string | string[] | null; provenance: string; sources: DomainSource[] };
 export type DomainContent = { domain_schema_version: 1; domain: {
   meeting_type: string; metadata: Record<string, DomainField>; sections: Record<string, DomainClaim[]>;
+  section_introductions?: Record<string, string>;
 }; user_text?: string; format?: string };
 export type DriftEntry = { location: string; source: DomainSource; current_text: string | null; drifted: boolean };
 
@@ -51,6 +52,9 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
 }) {
   const t = useT();
   const [draft, setDraft] = useState<DomainContent>(() => structuredClone(content));
+  const [metadataText, setMetadataText] = useState<Record<string, string>>(() => Object.fromEntries(
+    Object.entries(content.domain.metadata).map(([key, field]) =>
+      [key, Array.isArray(field.value) ? field.value.join(", ") : field.value || ""])));
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const dirty = JSON.stringify(draft) !== JSON.stringify(content);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -60,35 +64,55 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
   const updateClaim = (section: string, index: number, patch: Partial<DomainClaim>) => update((next) => {
     Object.assign(next.domain.sections[section][index], patch);
   });
+  const updateIntroduction = (section: string, value: string) => update((next) => {
+    if (value) (next.domain.section_introductions ||= {})[section] = value;
+    else if (next.domain.section_introductions) {
+      delete next.domain.section_introductions[section];
+      if (!Object.keys(next.domain.section_introductions).length) delete next.domain.section_introductions;
+    }
+  });
+  const save = () => {
+    const result = structuredClone(draft);
+    if (result.domain.section_introductions) {
+      for (const [section, text] of Object.entries(result.domain.section_introductions)) {
+        if (!text.trim()) delete result.domain.section_introductions[section];
+      }
+      if (!Object.keys(result.domain.section_introductions).length) delete result.domain.section_introductions;
+    }
+    void onSave(result);
+  };
   const removeClaim = (section: string, itemId: string) => update((next) => {
     const remaining = next.domain.sections[section].filter((item) => item.item_id !== itemId);
     if (remaining.length) next.domain.sections[section] = remaining;
     else delete next.domain.sections[section];
   });
   const sections = draft.format === "denso_warehouse"
-    ? ["summary", ...FORM_SECTIONS, "decisions"]
+    ? ["summary", ...FORM_SECTIONS, "decisions", "next_steps"]
     : draft.domain.meeting_type === "general"
     ? ["summary", "topics", "requirements", "decisions", "proposed_solutions", "actions",
       "open_questions", "risks_blockers", "next_steps", "technical_considerations"]
     : [...COMMON_SECTIONS, ...(TYPE_SECTIONS[draft.domain.meeting_type] || [])];
   const metadata = draft.domain.metadata;
   return <div className="domain-review">
+    <fieldset disabled={busy} className="contents">
     <p className="hint">{t("Edit meeting details and notes here. Saved audio sources remain available below each note.")}</p>
-    {content.user_text !== undefined && <p className="hint">{t("This version displays freeform Markdown; claim edits will not change that body.")}</p>}
+    {content.user_text !== undefined && <p className="hint">{t("This version displays freeform Markdown. Saving meeting details will replace that body after confirmation.")}</p>}
     <div className="domain-metadata">
       {(["title", "meeting_datetime", "project_customer", "participants", "objective"] as const).map((key) => {
         const field = metadata[key];
-        const current = Array.isArray(field.value) ? field.value.join(", ") : field.value || "";
+        const current = metadataText[key] ?? "";
         return <div key={key}><Label htmlFor={`domain-${key}`}>{t(({ title: "Title", meeting_datetime: "Actual meeting date and time (ISO with timezone)",
           project_customer: "Project / customer", participants: "Participants (comma separated)", objective: "Objective" })[key])}</Label>
-          <Input id={`domain-${key}`} value={current} onChange={(event) => update((next) => {
-            const text = event.target.value.trim();
+          <Input id={`domain-${key}`} value={current} onChange={(event) => {
+            const text = event.target.value;
+            setMetadataText((currentText) => ({ ...currentText, [key]: text }));
+            update((next) => {
             const target = next.domain.metadata[key];
             target.value = key === "participants" ? text.split(",").map((part) => part.trim()).filter(Boolean)
-              : key === "title" ? text || "Chưa rõ" : text || null;
-            target.provenance = text ? "user_provided" : "unknown";
+              : key === "title" ? text.trim() ? text : "Chưa rõ" : text.trim() ? text : null;
+            target.provenance = text.trim() ? "user_provided" : "unknown";
             target.sources = [];
-          })} />
+          }); }} />
           <small>{t("Provenance")}: {t(field.provenance)}</small>
         </div>;
       })}
@@ -123,6 +147,10 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
           });
         }}>{t("Add claim")}</Button></div>
       {expandedSections.has(section) && <div className="domain-section-body" id={`domain-section-body-${section}`}>
+      <Label htmlFor={`introduction-${section}`}>{t("Introduction for {section}", { section: t(SECTION_LABELS[section]) })}</Label>
+      <Textarea id={`introduction-${section}`} value={draft.domain.section_introductions?.[section] || ""}
+        placeholder={t("Leave blank to use the default introduction.")}
+        onChange={(event) => updateIntroduction(section, event.target.value)} />
       {(draft.domain.sections[section] || []).map((claim, index) => <div className="domain-claim" key={claim.item_id}>
         <div className="domain-claim-heading"><Label htmlFor={`claim-${claim.item_id}`}>{t("Claim text")}</Label>
           <Button variant="ghost" size="sm" className="domain-remove-button"
@@ -137,8 +165,8 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
             .map((field) => <Label key={field} htmlFor={`${field}-${claim.item_id}`}>{t(({ label: "Item label",
               method: "Calculation / display", data_source: "Data source", open_point: "Needs confirmation",
               owner: "Suggested owner", due_date: "Suggested deadline" })[field])}
-              <Input id={`${field}-${claim.item_id}`} value={claim[field] || "Chưa rõ"}
-                onChange={(event) => updateClaim(section, index, { [field]: event.target.value || "Chưa rõ",
+              <Input id={`${field}-${claim.item_id}`} value={claim[field] ?? "Chưa rõ"}
+                onChange={(event) => updateClaim(section, index, { [field]: event.target.value,
                   origin: "user_provided", review_status: "needs_review" })} /></Label>)}</div>}
         <div className="domain-claim-controls">
           {claim.kind && <Label htmlFor={`kind-${claim.item_id}`}>{t("Classification")}<NativeSelect id={`kind-${claim.item_id}`} value={claim.kind} onChange={(event) => updateClaim(section, index,
@@ -157,14 +185,14 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
         {section === "actions" && <div className="domain-claim-controls">
           {(["owner", "due_date"] as const).map((field) => <Label key={field} htmlFor={`${field}-${claim.item_id}`}>{t(field === "owner" ? "Suggested owner" : "Suggested deadline")}
             <Input id={`${field}-${claim.item_id}`} value={claim[field] || ""} onChange={(event) => updateClaim(section, index,
-              { [field]: event.target.value || "Chưa rõ", review_status: "needs_review" })} /></Label>)}
+              { [field]: event.target.value, review_status: "needs_review" })} /></Label>)}
         </div>}
         <small>{t("Origin")}: {t(claim.origin)} · {claim.item_id.slice(0, 8)}</small>
         {claim.sources.map((source) => {
           const current = drift.find((entry) => entry.location === `sections.${section}.${claim.item_id}` && entry.source.segment_id === source.segment_id);
           const stale = current?.drifted && current.source.excerpt === source.excerpt;
           return <div className="domain-source" key={`${source.run_id}-${source.segment_id}`}>
-            <Button variant="link" size="xs" onClick={() => { onSeek(source.start); onOpenSource?.(source.run_id, source.start); }}>
+            <Button variant="link" size="xs" onClick={() => { if (onOpenSource) onOpenSource(source.run_id, source.start); else onSeek(source.start); }}>
               {t("Seek source segment {id}", { id: source.segment_id })} · {source.start.toFixed(1)}s</Button>
             <p>{t("Saved excerpt")}: {source.excerpt}</p>
             {stale && <p role="alert">{t("Transcript changed since this draft")}: {current.current_text ?? t("Source segment missing")}</p>}
@@ -183,7 +211,8 @@ export function DomainMinutesReview({ content, drift, busy, onSave, onDirtyChang
       </div>)}
       </div>}
     </div>)}
-    <Button size="sm" disabled={!dirty || busy} onClick={() => void onSave(draft)}>{t("Save notes as new version")}</Button>
+    <Button size="sm" disabled={!dirty || busy} onClick={save}>{t("Save notes as new version")}</Button>
     {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}
+    </fieldset>
   </div>;
 }

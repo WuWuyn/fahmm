@@ -172,8 +172,20 @@ def validate_domain_content(content: object) -> None:
     if "user_text" in content and not isinstance(content["user_text"], str):
         raise ValueError("Invalid minutes edited text")
     domain = content.get("domain")
-    if not isinstance(domain, dict) or set(domain) != {"meeting_type", "metadata", "sections"}:
+    required_domain_fields = {"meeting_type", "metadata", "sections"}
+    if (
+        not isinstance(domain, dict)
+        or not required_domain_fields <= set(domain)
+        or set(domain) - required_domain_fields - {"section_introductions"}
+    ):
         raise ValueError("Invalid minutes domain")
+    introductions = domain.get("section_introductions", {})
+    if (
+        not isinstance(introductions, dict)
+        or set(introductions) - SECTIONS
+        or any(not isinstance(text, str) for text in introductions.values())
+    ):
+        raise ValueError("Invalid minutes section introductions")
     if not isinstance(domain["meeting_type"], str) or domain["meeting_type"] not in MEETING_TYPES:
         raise ValueError("Invalid meeting type")
     metadata = domain["metadata"]

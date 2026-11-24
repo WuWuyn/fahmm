@@ -400,7 +400,7 @@ def test_confirmed_claims_hide_parenthetical_review_details_but_keep_saved_sourc
     assert "- Đã thống nhất thử nghiệm. (" not in markdown
 
 
-def test_denso_overview_lists_all_categories_before_details_and_tables_next_steps():
+def test_denso_keeps_claims_in_text_and_only_uses_tables_for_work():
     content = new_domain_content("general", title="Biên bản")
     content["format"] = "denso_warehouse"
 
@@ -425,14 +425,138 @@ def test_denso_overview_lists_all_categories_before_details_and_tables_next_step
     sections["project_actions"] = [form_claim("Kiểm thử", "Thực hiện kiểm thử.")]
     sections["next_steps"] = [new_claim("Gửi tài liệu.", "user")]
     result = render_minutes(content)
-    overview, details = result.split("## 3. Bố cục", 1)
-    assert "| Hạng mục | Điều chỉnh thống nhất |" in overview
-    assert "Điều chỉnh bố cục." in overview and "Thêm bộ lọc." in overview
-    assert "Theo dõi chất lượng." in overview and "Thực hiện kiểm thử." in overview
-    assert "| Nhóm | Thông tin cần theo dõi |" in details
-    assert "| Công việc tiếp theo |\n| --- |\n| Gửi tài liệu. |" in details
+    assert "Điều chỉnh bố cục." in result and "Thêm bộ lọc." in result
+    assert "Theo dõi chất lượng." in result and "Thực hiện kiểm thử." in result
+    assert "Cách tính / hiển thị: Chưa rõ" in result
+    assert "Nguồn dữ liệu: Chưa rõ" in result
+    assert "Cần xác nhận: Chưa rõ" in result
+    assert result.count("| --- | --- | --- |") == 1
+    assert "| Công việc tiếp theo |\n| --- |\n| Gửi tài liệu. |" in result
     sections["sqdcm_kpis"] = []
     sections["next_steps"] = []
     without_optional = render_minutes(content)
     assert "### 4.2. Nhóm chỉ số SQDCM" not in without_optional
     assert "## 8. Công việc tiếp theo" not in without_optional
+
+
+def test_introductions_and_action_table_preserve_word_block_order():
+    from io import BytesIO
+
+    content = new_domain_content("project_status", title="Biên bản")
+    content["domain"]["section_introductions"] = {
+        "summary": "Đoạn dẫn đầu.\n\nĐoạn dẫn thứ hai.",
+        "actions": "Công việc cần theo dõi:",
+        "next_steps": "Lời dẫn sau bảng dù chưa có công việc.",
+    }
+    sections = content["domain"]["sections"]
+    sections["summary"] = [new_claim("Nội dung cuộc họp.", "user")]
+    sections["actions"] = [new_claim("Gửi báo cáo.", "user", owner="An", due_date="2026-11-30")]
+    rejected = new_claim("Không được xuất.", "user")
+    rejected["review_status"] = "rejected"
+    sections["actions"].append(rejected)
+    markdown = render_minutes(content)
+    assert "Đoạn dẫn đầu.\n\nĐoạn dẫn thứ hai." in markdown
+    assert "| Gửi báo cáo. | An | 2026-11-30 |" in markdown
+    assert "Không được xuất." not in markdown
+    assert "Lời dẫn sau bảng dù chưa có công việc." in markdown
+
+    with ZipFile(BytesIO(render_docx(markdown))) as archive:
+        root = ET.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    body = root.find("w:body", ns)
+    blocks = [
+        (
+            node.tag.rsplit("}", 1)[-1],
+            "".join(item.text or "" for item in node.findall(".//w:t", ns)),
+        )
+        for node in body
+    ]
+    first = next(i for i, (_, text) in enumerate(blocks) if "Đoạn dẫn đầu." in text)
+    table = next(i for i, (kind, _) in enumerate(blocks) if kind == "tbl")
+    last = next(i for i, (_, text) in enumerate(blocks) if "Lời dẫn sau bảng" in text)
+    assert first < table < last
+    assert "Gửi báo cáo." in blocks[table][1]
+
+
+def test_denso_keeps_all_summaries_decisions_and_kpi_fields():
+    content = new_domain_content("general")
+    content["format"] = "denso_warehouse"
+    content["domain"]["section_introductions"] = {"sqdcm_kpis": "Văn dẫn KPI tùy chỉnh."}
+    sections = content["domain"]["sections"]
+    sections["summary"] = [
+        new_claim("Tóm tắt thứ nhất.", "user"),
+        new_claim("Tóm tắt thứ hai.", "user"),
+    ]
+    sections["decisions"] = [new_claim("Kết luận một.", "user"), new_claim("Kết luận hai.", "user")]
+    sections["sqdcm_kpis"] = [
+        new_claim(
+            "Chất lượng.",
+            "user",
+            label="Q",
+            method="Tỷ lệ",
+            data_source="Báo cáo",
+            open_point="Xác nhận kỳ đo",
+            owner="Chưa rõ",
+            due_date="Chưa rõ",
+        )
+    ]
+    result = render_minutes(content)
+    for phrase in (
+        "Tóm tắt thứ nhất.",
+        "Tóm tắt thứ hai.",
+        "Kết luận một.",
+        "Kết luận hai.",
+        "Văn dẫn KPI tùy chỉnh.",
+        "Tỷ lệ",
+        "Báo cáo",
+        "Xác nhận kỳ đo",
+    ):
+        assert phrase in result
+    assert "| Nhóm |" not in result
+    content["user_text"] = "# Bản tự sửa\n\nNguyên văn do người dùng lưu."
+    assert render_minutes(content) == content["user_text"]
+
+
+@pytest.mark.parametrize("denso", [False, True])
+def test_work_table_preserves_pipes_and_backslashes_in_markdown_and_word(denso):
+    from io import BytesIO
+
+    content = new_domain_content("general")
+    task = r"Kiểm tra A|B tại C:\data\report và ký tự \|."
+    owner = r"An|Bình\Nhóm"
+    if denso:
+        content["format"] = "denso_warehouse"
+        claim = new_claim(
+            task,
+            "user",
+            label="Chưa rõ",
+            method="Chưa rõ",
+            data_source="Chưa rõ",
+            open_point="Chưa rõ",
+            owner=owner,
+            due_date="Chưa rõ",
+        )
+        content["domain"]["sections"]["project_actions"] = [claim]
+    else:
+        claim = new_claim(task, "user", owner=owner, due_date="Chưa rõ")
+        content["domain"]["sections"]["actions"] = [claim]
+    markdown = render_minutes(content)
+    assert r"A\|B" in markdown
+    assert r"C:\\data\\report" in markdown
+    assert r"\\\|" in markdown
+    with ZipFile(BytesIO(render_docx(markdown))) as archive:
+        root = ET.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    tables = root.findall(".//w:tbl", ns)
+    assert any(
+        task in [node.text for node in table.findall(".//w:t", ns)]
+        and owner in [node.text for node in table.findall(".//w:t", ns)]
+        for table in tables
+    )
+
+
+def test_word_table_parser_keeps_escaped_final_pipe_and_unknown_backslash():
+    from fahmm.docx_export import _table_row
+
+    assert _table_row(r"| C:\folder | A\|") == [r"C:\folder", "A|"]
+    assert _table_row(r"| A\\| B |") == ["A\\", "B"]

@@ -6,7 +6,7 @@ from dataclasses import asdict
 from multiprocessing.synchronize import Event as MpEvent
 from pathlib import Path
 
-from fahmm.asr import ASRBackend, WhisperASRBackend
+from fahmm.asr import ASR_ERROR_MESSAGES, ASRBackend, ASRRuntimeError, WhisperASRBackend
 
 
 def _send(output, message: dict, cancel: MpEvent) -> bool:
@@ -47,4 +47,10 @@ def run_asr_worker(
                 return
         _send(output, {"type": "completed"}, cancel)
     except Exception as exc:
-        _send(output, {"type": "error", "message": str(exc)}, cancel)
+        if isinstance(exc, ASRRuntimeError):
+            code = exc.code
+        elif isinstance(exc, FileNotFoundError) and str(exc) == "Saved meeting audio is missing":
+            code = "audio_missing"
+        else:
+            code = "asr_failed"
+        _send(output, {"type": "error", "code": code, "message": ASR_ERROR_MESSAGES[code]}, cancel)

@@ -7,6 +7,7 @@ import re
 import stat
 from pathlib import Path
 
+from fahmm.shared_file_lock import SharedFileLock, live_meeting_lock_path
 from fahmm.storage import MeetingStore
 
 
@@ -99,6 +100,22 @@ class MeetingDeletionService:
         return True
 
     def delete(self, meeting_id: str) -> None:
+        # Validate the existing root and identifier before creating the lock file.
+        self.meetings.metadata(meeting_id)
+        root = self.meetings.root
+        if _is_reparse(root):
+            raise ValueError("Refusing to delete through a linked meetings root")
+        lock = SharedFileLock(live_meeting_lock_path(root, meeting_id), shared=False)
+        try:
+            lock.acquire(timeout=0)
+        except TimeoutError as exc:
+            raise RuntimeError("This meeting is in use by live transcription") from exc
+        try:
+            self._delete_locked(meeting_id)
+        finally:
+            lock.release()
+
+    def _delete_locked(self, meeting_id: str) -> None:
         self.meetings.begin_deletion(meeting_id)
         renamed = False
         try:

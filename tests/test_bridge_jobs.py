@@ -70,6 +70,29 @@ def call(app, operation, **params):
     return reply["result"]
 
 
+def test_asr_status_returns_only_whitelisted_errors(tmp_path, monkeypatch):
+    from fahmm.asr import ASR_ERROR_MESSAGES
+    from fahmm.asr_jobs import JobSnapshot
+
+    app = BridgeApplication(tmp_path)
+    call(app, "session.hello", versions=[1])
+    monkeypatch.setattr(
+        app.asr,
+        "snapshot",
+        lambda: JobSnapshot("error", None, None, None, 0, r"C:\private\user-data", "cuda_runtime"),
+    )
+    result = call(app, "asr.status")
+    assert result["errorCode"] == "cuda_runtime"
+    assert result["error"] == ASR_ERROR_MESSAGES["cuda_runtime"]
+    assert "private" not in result["error"]
+    monkeypatch.setattr(
+        app.asr,
+        "snapshot",
+        lambda: JobSnapshot("error", None, None, None, 0, r"C:\private\user-data", "unknown"),
+    )
+    assert call(app, "asr.status")["errorCode"] == "asr_failed"
+
+
 def prepared(tmp_path, monkeypatch):
     monkeypatch.setattr("fahmm.models.validate_model_dir", lambda path: None)
     app = BridgeApplication(tmp_path)

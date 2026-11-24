@@ -13,7 +13,12 @@ import { useUIStore } from "@/shared/uiStore";
 type Segment = { id: number; start: number; end: number; text: string };
 type Run = { manifest: { run_id: string; created_at: string; model_repository: string; start_seconds?: number }; original: Segment[]; working: Segment[] };
 type RunSummary = { run_id: string; created_at: string; model_repository: string; start_seconds?: number };
-type AsrStatus = { state: string; meetingId: string | null; runId: string | null; progress: number | null; segmentCount: number; error: string | null };
+type AsrStatus = { state: string; meetingId: string | null; runId: string | null; progress: number | null; segmentCount: number; error: string | null; errorCode?: string | null };
+
+const ASR_STATUS_ERRORS: Record<string, string> = {
+  asr_memory_low: "Transcription stopped because available memory is low. Close other applications and retry. Saved audio and transcripts are kept.",
+  asr_memory_unavailable: "Transcription stopped because available memory could not be checked. Restart the app and retry. Saved audio and transcripts are kept.",
+};
 
 function timestamp(seconds: number) {
   const whole = Math.floor(seconds);
@@ -38,9 +43,10 @@ function parseStartTime(value: string): number | null {
   return Number.isFinite(seconds) && seconds <= Number.MAX_SAFE_INTEGER ? seconds : null;
 }
 
-export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSeconds = 0, audioDurationSeconds = 0 }: {
+export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSeconds = 0, audioDurationSeconds = 0, requestedRun, onDirtyChange }: {
   meetingId: string; onSeek: (seconds: number) => void; onRunChange: () => void;
   playheadSeconds?: number; audioDurationSeconds?: number;
+  requestedRun?: { runId: string; nonce: number } | null; onDirtyChange?: (dirty: boolean) => void;
 }) {
   const t = useT();
   const languageUI = useUIStore((state) => state.language);
@@ -57,6 +63,13 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
   const [message, setMessage] = useState("");
   const [messageName, setMessageName] = useState("");
   const dirty = !!run && working.some((segment, index) => segment.text !== run.working[index]?.text);
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => {
+    if (!requestedRun) return;
+    if (requestedRun.runId === selectedRun && run) setWorking(run.working.map((segment) => ({ ...segment })));
+    else setSelectedRun(requestedRun.runId);
+  }, [requestedRun]);
 
   const refreshRuns = useCallback(async () => {
     const [listing, catalog] = await Promise.all([
@@ -104,9 +117,15 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
         if (segment.text !== run.working[index]?.text) edits[String(segment.id)] = segment.text;
       });
       await bridgeCall("transcript.saveEdits", { meetingId, runId: selectedRun, edits });
-      const updated = await bridgeCall<{ run: Run }>("transcript.read", { meetingId, runId: selectedRun });
-      setRun(updated.run); setWorking(updated.run.working.map((segment) => ({ ...segment })));
-      setMessage("Transcript edits saved locally."); onRunChange();
+      try {
+        const updated = await bridgeCall<{ run: Run }>("transcript.read", { meetingId, runId: selectedRun });
+        setRun(updated.run); setWorking(updated.run.working.map((segment) => ({ ...segment })));
+        setMessage("Transcript edits saved locally.");
+      } catch {
+        setRun({ ...run, working: working.map((segment) => ({ ...segment })) });
+        setMessage("Transcript edits were saved, but could not be reloaded. Reopen this meeting to verify them.");
+      }
+      onRunChange();
     } catch { setMessage("Could not save transcript edits."); }
     finally { setBusy(false); }
   }
@@ -121,15 +140,16 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
     try {
       await bridgeCall(retry ? "asr.retry" : "asr.startFrom", retry ? {} :
         { meetingId, modelId: selectedModel, language, startSeconds });
-    } catch { setMessage("Could not start transcription. Check the local model and audio."); }
+    } catch (error) { setMessage(String(error).includes("RESOURCE_BUSY")
+      ? "Wait for the current transcription or AI job to finish."
+      : "Could not start transcription. Check the local model and audio."); }
     finally { setBusy(false); }
   }
 
   async function exportText(copy: boolean) {
     if (!selectedRun) return;
     if (dirty) {
-      if (!window.confirm(t("Discard unsaved transcript edits and use the saved version? Cancel to save edits first."))) return;
-      if (run) setWorking(run.working.map((segment) => ({ ...segment })));
+      if (!window.confirm(t("Use the saved transcript? Your unsaved edits will remain."))) return;
     }
     setMessage("");
     try {
@@ -181,16 +201,15 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
       </div>
       {activeJob && <div className="job-progress"><span>{t(status?.state === "loading" ? "Loading model" : status?.state === "cancelling" ? "Cancelling" : "Transcribing")}</span>
         <Progress value={status?.progress == null ? null : Math.round(status.progress * 100)} aria-label={t("Transcription progress")} /> <span>{status?.progress == null ? "" : `${Math.round(status.progress * 100)}%`}</span></div>}
-      {status?.state === "error" && status.meetingId === meetingId && <div className="alert" role="alert">{t(status.error || "Transcription failed.")}</div>}
+      {status?.state === "error" && status.meetingId === meetingId && <div className="alert" role="alert">{t((status.errorCode && ASR_STATUS_ERRORS[status.errorCode]) || status.error || "Transcription failed.")}</div>}
       <div className="document-toolbar secondary"><Label htmlFor="run-select">{t("Saved run")}</Label>
-        <NativeSelect id="run-select" value={selectedRun} onChange={(event) => {
+        <NativeSelect id="run-select" value={selectedRun} disabled={busy} onChange={(event) => {
           if (dirty && !window.confirm(t("Discard unsaved transcript edits?"))) return;
           const nextRun = event.target.value;
           if (!nextRun) return;
-          const previousRun = selectedRun;
-          setSelectedRun(nextRun);
-          void bridgeCall("transcript.select", { meetingId, runId: nextRun }).then(onRunChange)
-            .catch(() => { setSelectedRun(previousRun); setMessage("Could not select this transcript run."); });
+          setBusy(true);
+          void bridgeCall("transcript.select", { meetingId, runId: nextRun }).then(() => { setSelectedRun(nextRun); onRunChange(); })
+            .catch(() => { setMessage("Could not select this transcript run."); }).finally(() => setBusy(false));
         }}><option value="" disabled={runs.length > 0}>{t("No transcript yet")}</option>
           {runs.map((item) => <option key={item.run_id} value={item.run_id}>{formatDateTime(item.created_at, languageUI)} · {item.model_repository} · {t("from {time}", { time: startTimeLabel(item.start_seconds ?? 0) })}</option>)}
         </NativeSelect></div>
@@ -203,7 +222,7 @@ export function TranscriptPanel({ meetingId, onSeek, onRunChange, playheadSecond
       <Button variant="ghost" className="timestamp-button" onClick={() => onSeek(segment.start)}
         aria-label={t("Play audio from {time}", { time: timestamp(segment.start) })}>
         <CirclePlay size={23} /><span>{timestamp(segment.start)}</span><span aria-hidden="true">– {timestamp(segment.end)}</span></Button>
-      <div className="segment-copy"><Textarea rows={1} aria-label={t("Transcript segment {id}", { id: segment.id })} value={segment.text}
+      <div className="segment-copy"><Textarea rows={1} disabled={busy} aria-label={t("Transcript segment {id}", { id: segment.id })} value={segment.text}
         onChange={(event) => setWorking((current) => current.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />
         {run && segment.text !== run.original[index]?.text && <small>{t("Original ASR:")} {run.original[index]?.text}</small>}
       </div></div>)}</div>

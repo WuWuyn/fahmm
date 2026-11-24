@@ -44,6 +44,18 @@ class TranscriptStore:
         info: dict,
         segments: list[dict],
     ) -> None:
+        with self.meetings.input_guard(meeting_id):
+            self._save_run(meeting_id, run_id, model, language, info, segments)
+
+    def _save_run(
+        self,
+        meeting_id: str,
+        run_id: str,
+        model: InstalledModel,
+        language: str,
+        info: dict,
+        segments: list[dict],
+    ) -> None:
         target = self._run_dir(meeting_id, run_id)
         if target.exists():
             raise FileExistsError("This transcription run already exists")
@@ -123,10 +135,15 @@ class TranscriptStore:
         return self.read_run(meeting_id, run_id) if run_id else None
 
     def select_run(self, meeting_id: str, run_id: str) -> None:
-        self.read_run(meeting_id, run_id)
-        self.meetings.update_metadata(meeting_id, active_run=run_id)
+        with self.meetings.input_guard(meeting_id):
+            self.read_run(meeting_id, run_id)
+            self.meetings.update_metadata(meeting_id, active_run=run_id)
 
     def save_edits(self, meeting_id: str, run_id: str, edits: dict[int, str]) -> None:
+        with self.meetings.input_guard(meeting_id):
+            self._save_edits(meeting_id, run_id, edits)
+
+    def _save_edits(self, meeting_id: str, run_id: str, edits: dict[int, str]) -> None:
         data = self.read_run(meeting_id, run_id)
         original_ids = {segment["id"] for segment in data["original"]}
         if not set(edits).issubset(original_ids):

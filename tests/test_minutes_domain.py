@@ -82,6 +82,46 @@ def test_domain_version_round_trips_for_every_meeting_type(saved_run, meeting_ty
     assert store.read_version(meeting_id, version_id)["manifest"]["review_state"] == "unverified"
 
 
+def test_section_introduction_and_action_edits_survive_version_round_trip(saved_run):
+    meetings, meeting_id, run_id = saved_run
+    content = new_domain_content()
+    content["domain"]["sections"]["actions"] = [
+        new_claim(
+            "Kiểm tra API",
+            "user_provided",
+            owner="Lan",
+            due_date="Chưa rõ",
+            confirmation_status="suggested",
+        )
+    ]
+    store = MinutesStore(meetings)
+    original = store.save_version(meeting_id, run_id, "extractive", content, "default")
+    edited = copy.deepcopy(content)
+    edited["domain"]["section_introductions"] = {
+        "actions": "Các công việc sau cần được rà soát.",
+        "next_steps": "Tiếp tục trao đổi trong cuộc họp sau.",
+    }
+    edited["domain"]["sections"]["actions"][0]["owner"] = "Minh"
+    revised = store.edit_domain_version(meeting_id, original, edited)
+
+    reopened = MinutesStore(MeetingStore(meetings.root))
+    assert reopened.read_version(meeting_id, revised)["content"] == edited
+    assert (
+        "section_introductions"
+        not in reopened.read_version(meeting_id, original)["content"]["domain"]
+    )
+    assert reopened.active_version(meeting_id)["manifest"]["version_id"] == revised
+
+
+@pytest.mark.parametrize("introductions", [None, [], {"unknown": "text"}, {"actions": 3}])
+def test_invalid_section_introductions_are_rejected(saved_run, introductions):
+    meetings, meeting_id, run_id = saved_run
+    content = new_domain_content()
+    content["domain"]["section_introductions"] = introductions
+    with pytest.raises(ValueError, match="section introductions"):
+        MinutesStore(meetings).save_version(meeting_id, run_id, "extractive", content, "default")
+
+
 @pytest.mark.parametrize("meeting_type", sorted(MEETING_TYPES))
 @pytest.mark.parametrize(
     "mutate",

@@ -1,3 +1,4 @@
+import io
 import json
 import wave
 
@@ -57,6 +58,102 @@ def test_recovery_finds_committed_chunks_even_if_metadata_is_stale(tmp_path):
     assert store.metadata(meeting)["state"] == "completed"
     assert store.metadata(other)["state"] == "recording"
     assert not store.incomplete()
+
+
+def test_recovery_mix_matches_reference_with_nested_overlaps_and_skipped_chunks(tmp_path):
+    store = MeetingStore(tmp_path)
+    meeting = store.create({"system": "speaker", "microphone": "mic"})
+    other = store.create({"system": "speaker", "microphone": "mic"})
+    other_chunk = store.write_chunk(other, "microphone", 0, np.full(128, 0.65))
+    other_before = other_chunk.read_bytes()
+
+    def chunk(source, start, frames, value, suffix):
+        original = store.write_chunk(meeting, source, start, np.full(frames, value))
+        original.replace(original.with_name(f"{start:012d}-{suffix}.wav"))
+
+    chunk("system", 0, 4 * SAMPLE_RATE, 0.1, "00000001")
+    chunk("system", SAMPLE_RATE // 4, SAMPLE_RATE // 2, 0.2, "00000002")
+    chunk("system", SAMPLE_RATE // 2, 2 * SAMPLE_RATE, 0.3, "00000003")
+    # Two chunks start together; the lexically later name wins at each sample.
+    chunk("system", SAMPLE_RATE, SAMPLE_RATE // 3, 0.4, "00000004")
+    chunk("system", SAMPLE_RATE, SAMPLE_RATE // 4, 0.5, "00000005")
+    chunk("system", 6 * SAMPLE_RATE, SAMPLE_RATE // 3, -0.3, "00000006")
+    chunk("microphone", 100, SAMPLE_RATE, -0.2, "00000007")
+    chunk("microphone", SAMPLE_RATE // 2, 3 * SAMPLE_RATE, -0.4, "00000008")
+    chunk("microphone", 5 * SAMPLE_RATE, SAMPLE_RATE // 2, 0.25, "00000009")
+
+    directory = store._meeting_dir(meeting)
+    broken = directory / "system" / "000000010000-aaaaaaaa.wav"
+    broken.write_bytes(b"broken")
+    truncated = directory / "microphone" / "000000020000-bbbbbbbb.wav"
+    with wave.open(str(truncated), "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(SAMPLE_RATE)
+        file.writeframes(b"\0\0" * 20)
+    with truncated.open("r+b") as file:
+        file.truncate(truncated.stat().st_size - 10)
+
+    scanned, skipped = store.scan_chunks(meeting)
+    total = max(item.start_frame + item.frames for items in scanned.values() for item in items)
+    expected = np.zeros((total, 2), dtype="<i2")
+    # Independently render the whole timeline: ordered chunks overwrite in-place.
+    for channel, source in enumerate(("system", "microphone")):
+        for item in scanned[source]:
+            with wave.open(str(item.path), "rb") as file:
+                raw = file.readframes(item.frames)
+            expected[item.start_frame : item.start_frame + item.frames, channel] = np.frombuffer(
+                raw, dtype="<i2"
+            )
+    reference = io.BytesIO()
+    with wave.open(reference, "wb") as file:
+        file.setnchannels(2)
+        file.setsampwidth(2)
+        file.setframerate(SAMPLE_RATE)
+        file.writeframes(expected.tobytes())
+
+    store.set_state(meeting, "error")
+    assert meeting in [item["id"] for item in store.incomplete()]
+    result = store.finalize(meeting)
+    assert result.path.read_bytes() == reference.getvalue()
+    assert set(result.skipped_chunks) == set(skipped) == {str(broken), str(truncated)}
+    assert store.metadata(meeting)["state"] == "completed"
+    assert other_chunk.read_bytes() == other_before
+    assert store.metadata(other)["state"] == "recording"
+
+
+def test_finalize_does_not_rescan_old_chunks_for_each_output_block(tmp_path, monkeypatch):
+    store = MeetingStore(tmp_path)
+    meeting = store.create({})
+    count = 25
+    for index in range(count):
+        store.write_chunk(meeting, "system", 2 * index * SAMPLE_RATE, np.array([0.25]))
+    chunks, skipped = store.scan_chunks(meeting)
+    reads = 0
+
+    class CountedChunk:
+        def __init__(self, chunk):
+            self.chunk = chunk
+            self.path = chunk.path
+
+        @property
+        def start_frame(self):
+            nonlocal reads
+            reads += 1
+            return self.chunk.start_frame
+
+        @property
+        def frames(self):
+            nonlocal reads
+            reads += 1
+            return self.chunk.frames
+
+    measured = {source: [CountedChunk(item) for item in items] for source, items in chunks.items()}
+    monkeypatch.setattr(store, "scan_chunks", lambda _meeting: (measured, skipped))
+    result = store.finalize(meeting)
+    assert result.path.is_file()
+    # A full scan would inspect 25 chunks on each of 49 output blocks.
+    assert reads < 40 * count
 
 
 def test_failed_final_mix_keeps_sources_recoverable(tmp_path, monkeypatch):

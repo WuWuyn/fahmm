@@ -19,6 +19,7 @@ from tokenizers import Tokenizer
 from tqdm import tqdm
 
 from fahmm.model_catalog import BY_REPOSITORY
+from fahmm.shared_file_lock import SharedFileLock, live_model_lock_path
 
 MODEL_ASSETS = (
     "model.bin",
@@ -29,6 +30,30 @@ MODEL_ASSETS = (
     "preprocessor_config.json",
 )
 ProgressCallback = Callable[[str, int, int], None]
+
+
+class _ModelUsage:
+    """Usage state shared by managers of the same root in this process."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.active_counts: dict[str, int] = {}
+
+
+_USAGE_REGISTRY_LOCK = threading.Lock()
+# Keep state alive for the process lifetime, including if a caller drops its
+# manager while a worker still has a model open. This fails closed on deletion.
+_USAGE_REGISTRY: dict[str, _ModelUsage] = {}
+
+
+def _model_usage(root: Path) -> _ModelUsage:
+    key = os.path.normcase(str(root.resolve()))
+    with _USAGE_REGISTRY_LOCK:
+        usage = _USAGE_REGISTRY.get(key)
+        if usage is None:
+            usage = _ModelUsage()
+            _USAGE_REGISTRY[key] = usage
+        return usage
 
 
 def default_model_root() -> Path:
@@ -93,8 +118,8 @@ class RemoteModel:
 class ModelManager:
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root) if root is not None else default_model_root()
-        self._active_ids: set[str] = set()
-        self._usage_lock = threading.RLock()
+        self._usage = _model_usage(self.root)
+        self._held_counts: dict[str, int] = {}
 
     def _index(self) -> dict:
         target = self.root / "index.json"
@@ -154,18 +179,45 @@ class ModelManager:
         return model
 
     def begin_use(self, model_id: str) -> InstalledModel:
-        with self._usage_lock:
+        """Acquire one use; callers must pair it with exactly one end_use."""
+        with self._usage.lock:
             model = self.get(model_id)
-            self._active_ids.add(model_id)
+            self._usage.active_counts[model_id] = self._usage.active_counts.get(model_id, 0) + 1
+            self._held_counts[model_id] = self._held_counts.get(model_id, 0) + 1
             return model
 
     def end_use(self, model_id: str) -> None:
-        with self._usage_lock:
-            self._active_ids.discard(model_id)
+        with self._usage.lock:
+            held = self._held_counts.get(model_id, 0)
+            if not held:
+                return
+            if held > 1:
+                self._held_counts[model_id] = held - 1
+            else:
+                self._held_counts.pop(model_id, None)
+            count = self._usage.active_counts.get(model_id, 0)
+            if count > 1:
+                self._usage.active_counts[model_id] = count - 1
+            else:
+                self._usage.active_counts.pop(model_id, None)
 
     def delete(self, model_id: str) -> None:
-        with self._usage_lock:
-            if model_id in self._active_ids:
+        self._path(model_id)
+        if model_id not in self._index()["installations"]:
+            raise KeyError("Model is not installed")
+        lock = SharedFileLock(live_model_lock_path(self.root, model_id), shared=False)
+        try:
+            lock.acquire(timeout=0)
+        except TimeoutError as exc:
+            raise RuntimeError("This model is in use by live transcription") from exc
+        try:
+            self._delete_locked(model_id)
+        finally:
+            lock.release()
+
+    def _delete_locked(self, model_id: str) -> None:
+        with self._usage.lock:
+            if self._usage.active_counts.get(model_id, 0):
                 raise RuntimeError("This model is in use by a transcription job")
             model = self.get(model_id)
             expected_root = (self.root / "installed").resolve()

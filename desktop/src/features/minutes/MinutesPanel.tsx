@@ -26,7 +26,8 @@ type CloudPreview = { previewId: string; preview: {
 type OfflineTemplate = { headings: Record<string, string>; guidance: string; topic_limit: number };
 type GenerationNotice = { kind: "error" | "info"; text: string };
 type LocalAI = { connected: boolean; models: string[]; selectedModel: string; ready: boolean };
-type LocalJob = { state: string; progress: number; error: string | null; versionId: string | null };
+type LocalJob = { state: string; progress: number; error: string | null; versionId: string | null; meetingId?: string | null; jobId?: string | null };
+type LocalCheckpoint = { available: boolean; meetingType: string | null; progress: number; error: string | null };
 const PROMPTS = {
   structured: "Viết biên bản cuộc họp bằng tiếng Việt. Chỉ dùng các đoạn đã chọn và nêu rõ thông tin chưa xác minh.",
   concise: "Tạo biên bản tiếng Việt ngắn gọn từ các đoạn đã chọn. Liệt kê quyết định, việc cần làm và thông tin chưa xác minh.",
@@ -42,9 +43,10 @@ function versionSourceLabel(manifest: VersionSummary): string {
   return "Edited meeting minutes.";
 }
 
-export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, onOpenSource, runVersion }: {
+export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, onOpenSource, runVersion, onDirtyChange }: {
   meetingId: string; privacyMode: string; onPrivacyChange: (mode: string) => void;
   onSeek: (seconds: number) => void; onOpenSource?: (runId: string, seconds: number) => void; runVersion: number;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const t = useT();
   const language = useUIStore((state) => state.language);
@@ -68,22 +70,34 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   const [preview, setPreview] = useState<CloudPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const generating = useRef(false);
+  const saving = useRef(false);
+  const refreshSequence = useRef(0);
+  const currentMeeting = useRef(meetingId);
+  currentMeeting.current = meetingId;
   const [generationNotice, setGenerationNotice] = useState<GenerationNotice | null>(null);
   const [localAI, setLocalAI] = useState<LocalAI | null>(null);
   const [localProgress, setLocalProgress] = useState<number | null>(null);
+  const [localJob, setLocalJob] = useState<LocalJob | null>(null);
+  const [localCheckpoint, setLocalCheckpoint] = useState<LocalCheckpoint | null>(null);
+  const [localBlocked, setLocalBlocked] = useState(false);
   const [message, setMessage] = useState("");
   const [messageName, setMessageName] = useState("");
-  const freeformDirty = editing && editBody !== savedBody;
+  const freeformDirty = editBody !== savedBody;
   const dirty = freeformDirty || domainDirty;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const savedMeetingType = (version?.content as DomainContent | undefined)?.domain?.meeting_type;
 
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
     const [listing, providerList, runs, templateData] = await Promise.all([
       bridgeCall<{ versions: VersionSummary[]; activeVersionId: string | null }>("minutes.list", { meetingId }),
       bridgeCall<{ profiles: Profile[] }>("provider.list"),
       bridgeCall<{ activeRunId: string | null }>("transcript.list", { meetingId }),
       bridgeCall<{ template: OfflineTemplate }>("minutes.template", { meetingId }),
     ]);
+    const active = runs.activeRunId ? await bridgeCall<{ run: { working: Segment[] } }>("transcript.read",
+      { meetingId, runId: runs.activeRunId }) : null;
+    if (sequence !== refreshSequence.current || currentMeeting.current !== meetingId) return;
     setVersions(listing.versions);
     setSelectedVersion((current) => current && listing.versions.some((item) => item.version_id === current)
       ? current : listing.activeVersionId || listing.versions[0]?.version_id || "");
@@ -91,24 +105,87 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     setTemplate(templateData.template);
     setProfileId((current) => providerList.profiles.some((profile) => profile.id === current)
       ? current : providerList.profiles[0]?.id || "");
-    if (runs.activeRunId) {
-      const active = await bridgeCall<{ run: { working: Segment[] } }>("transcript.read",
-        { meetingId, runId: runs.activeRunId });
-      setSegments(active.run.working);
-    } else setSegments([]);
+    setSegments(active?.run.working || []);
   }, [meetingId]);
 
-  useEffect(() => { setSelectedVersion(""); setVersion(null); setSavedBody(""); setEditBody("");
+  const refreshCheckpoint = useCallback(async () => {
+    try {
+      const checkpoint = await bridgeCall<LocalCheckpoint>("minutes.localCheckpoint", { meetingId });
+      if (currentMeeting.current === meetingId) setLocalCheckpoint(checkpoint);
+    } catch {
+      if (currentMeeting.current === meetingId) setLocalCheckpoint(null);
+    }
+  }, [meetingId]);
+
+  async function followLocalJob(jobId: string, alive: () => boolean = () => true) {
+    try {
+      let job: LocalJob;
+      do {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        job = await bridgeCall<LocalJob>("minutes.localStatus");
+        if (!alive()) return;
+        if (job.meetingId && job.meetingId !== meetingId) throw new Error("Another meeting owns the AI job");
+        if (job.jobId && job.jobId !== jobId) throw new Error("The AI job changed");
+        setLocalJob(job);
+        setLocalProgress(job.progress);
+      } while (["running", "cancelling", "saving"].includes(job.state));
+      if (job.state === "cancelled") {
+        setGenerationNotice({ kind: "info", text: "AI generation stopped. Saved progress can be resumed." });
+      } else if (job.state === "completed" && job.versionId) {
+        setSelectedVersion(job.versionId);
+        setGenerationNotice({ kind: "info", text: "Minutes saved. Opening the new version…" });
+        try { await refresh(); }
+        catch { setGenerationNotice({ kind: "error", text: "Minutes saved, but the list could not refresh. Reopen this meeting to view them." }); }
+      } else {
+        if (job.state === "worker_stuck") setLocalBlocked(true);
+        setGenerationNotice({ kind: "error", text: `Local AI could not create minutes: ${job.error || "Local AI generation failed"}` });
+      }
+    } catch (error) {
+      if (alive()) setGenerationNotice({ kind: "error", text: `Local AI could not create minutes: ${String(error)}` });
+    } finally {
+      if (alive()) {
+        generating.current = false; setBusy(false); setLocalProgress(null); setLocalJob(null);
+        void refreshCheckpoint();
+      }
+    }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    setSelectedVersion(""); setVersion(null); setSavedBody(""); setEditBody("");
     setSelectedIds([]); setReviewedIds([]); setEditing(false); setDomainDirty(false); setMessage("");
-    setGenerationNotice(null);
-    void refresh().catch(() => setMessage("Could not load minutes and provider profiles."));
-    void bridgeCall<LocalAI>("llm.availability").then(setLocalAI).catch(() => setLocalAI(null));
+    setVersions([]); setSegments([]); setGenerationNotice(null);
+    void bridgeCall<LocalAI>("llm.availability").then((value) => { if (alive) setLocalAI(value); })
+      .catch(() => { if (alive) setLocalAI(null); });
+    return () => { alive = false; };
+  }, [meetingId]);
+  useEffect(() => {
+    let alive = true;
+    void refresh().catch(() => { if (alive) setMessage("Could not load minutes and provider profiles."); });
+    return () => { alive = false; };
   }, [refresh, runVersion]);
   useEffect(() => {
-    if (!selectedVersion) { setVersion(null); setSavedBody(""); setSourceDrift([]); return; }
+    let alive = true;
+    setLocalCheckpoint(null); setLocalJob(null); setLocalProgress(null); setBusy(false); setLocalBlocked(false);
+    void refreshCheckpoint();
+    void bridgeCall<LocalJob>("minutes.localStatus").then((job) => {
+      if (alive && job.state === "worker_stuck") {
+        setLocalBlocked(true);
+        setGenerationNotice({ kind: "error", text: "The AI request could not be stopped. Restart the application before retrying." });
+      }
+      if (!alive || generating.current || job.meetingId !== meetingId ||
+          !job.jobId || !["running", "cancelling", "saving"].includes(job.state)) return;
+      generating.current = true; setBusy(true); setLocalJob(job); setLocalProgress(job.progress);
+      void followLocalJob(job.jobId, () => alive);
+    }).catch(() => { /* Older sidecars may not support recovery status. */ });
+    return () => { alive = false; generating.current = false; };
+  }, [meetingId, refreshCheckpoint]);
+  useEffect(() => {
+    if (!selectedVersion) { setVersion(null); setSavedBody(""); setEditBody(""); setSourceDrift([]); return; }
     let alive = true;
     setVersion(null);
     setSavedBody("");
+    setEditBody("");
     setSourceDrift([]);
     void Promise.all([
       bridgeCall<{ version: Version }>("minutes.read", { meetingId, versionId: selectedVersion }),
@@ -122,15 +199,20 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     }).catch((error) => { if (alive) setGenerationNotice({ kind: "error", text: String(error).includes("UNSUPPORTED_OPERATION")
       ? "The desktop backend is out of date. Close this app and open the latest build; saved minutes remain intact."
       : "Could not display the saved minutes. Close and reopen this meeting; your draft remains saved." }); });
+    return () => { alive = false; };
+  }, [meetingId, selectedVersion]);
+  useEffect(() => {
+    if (!selectedVersion) return;
+    let alive = true;
     void bridgeCall<{ sources: DriftEntry[] }>("minutes.sourceDrift", { meetingId, versionId: selectedVersion })
       .then((result) => { if (alive) setSourceDrift(result.sources); })
       .catch(() => { /* Source comparison is optional for viewing minutes. */ });
     return () => { alive = false; };
-  }, [meetingId, selectedVersion]);
-  async function generateOffline(type = "general", mode: "auto" | "extractive" = "auto") {
+  }, [meetingId, selectedVersion, runVersion]);
+  async function generateOffline(type = "general", mode: "auto" | "extractive" | "resume" = "auto") {
     if (generating.current || !segments.some((segment) => segment.text.trim())) return;
     if (dirty && !window.confirm(t("Discard unsaved minutes edits before generating a new version?"))) return;
-    const useLocalAI = mode === "auto" && localAI?.ready === true;
+    const useLocalAI = mode === "resume" || (mode === "auto" && localAI?.ready === true);
     generating.current = true;
     setBusy(true); setMessage("");
     setGenerationNotice({ kind: "info", text: useLocalAI
@@ -139,15 +221,12 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
     try {
       let data: { versionId: string };
       if (useLocalAI) {
-        await bridgeCall("minutes.generateLocalStart", { meetingId, meetingType: type });
-        let job: LocalJob;
-        do {
-          await new Promise((resolve) => window.setTimeout(resolve, 1200));
-          job = await bridgeCall<LocalJob>("minutes.localStatus");
-          setLocalProgress(job.progress);
-        } while (job.state === "running");
-        if (job.state !== "completed" || !job.versionId) throw new Error(job.error || "Local AI generation failed");
-        data = { versionId: job.versionId };
+        const started = mode === "resume"
+          ? await bridgeCall<{ jobId: string }>("minutes.resumeLocalStart", { meetingId })
+          : await bridgeCall<{ jobId: string }>("minutes.generateLocalStart", { meetingId, meetingType: type });
+        setLocalJob({ state: "running", progress: 0, error: null, versionId: null, meetingId, jobId: started.jobId });
+        await followLocalJob(started.jobId, () => currentMeeting.current === meetingId);
+        return;
       } else {
         data = await bridgeCall<{ versionId: string }>("minutes.generateOffline", { meetingId, runId: null, meetingType: type });
       }
@@ -155,10 +234,38 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       setGenerationNotice({ kind: "info", text: "Minutes saved. Opening the new version…" });
       try { await refresh(); }
       catch { setGenerationNotice({ kind: "error", text: "Minutes saved, but the list could not refresh. Reopen this meeting to view them." }); }
-    } catch (error) { setGenerationNotice({ kind: "error", text: useLocalAI
-      ? `Local AI could not create minutes: ${String(error)}`
+    } catch (error) { setGenerationNotice({ kind: "error", text: String(error).includes("RESOURCE_BUSY")
+      ? "Wait for the current transcription or AI job to finish."
+      : useLocalAI ? `Local AI could not create minutes: ${String(error)}`
       : "Could not create meeting minutes. Check the saved transcript and try again." }); }
-    finally { generating.current = false; setBusy(false); setLocalProgress(null); }
+    finally {
+      if (currentMeeting.current === meetingId) {
+        generating.current = false; setBusy(false); setLocalProgress(null); void refreshCheckpoint();
+      }
+    }
+  }
+
+  async function cancelLocalJob() {
+    if (!localJob?.jobId) return;
+    try {
+      const result = await bridgeCall<{ accepted: boolean }>("minutes.cancelLocal", { meetingId, jobId: localJob.jobId });
+      if (currentMeeting.current !== meetingId) return;
+      if (result.accepted) setLocalJob((job) => job && { ...job, state: "cancelling" });
+      else setGenerationNotice({ kind: "info", text: "The AI job is no longer cancellable. Check its current status." });
+    } catch {
+      if (currentMeeting.current === meetingId) setGenerationNotice({ kind: "error", text: "Could not request AI cancellation." });
+    }
+  }
+
+  async function discardLocalCheckpoint() {
+    if (!window.confirm(t("Discard saved AI progress? Completed minutes are kept."))) return;
+    try {
+      await bridgeCall("minutes.discardLocalCheckpoint", { meetingId });
+      await refreshCheckpoint();
+      if (currentMeeting.current === meetingId) setGenerationNotice({ kind: "info", text: "Saved AI progress was discarded." });
+    } catch {
+      if (currentMeeting.current === meetingId) setGenerationNotice({ kind: "error", text: "Could not discard saved AI progress." });
+    }
   }
 
   async function saveTemplate() {
@@ -178,29 +285,47 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   }
 
   async function saveEdit() {
-    if (!version || !freeformDirty) return;
-    setBusy(true); setMessage("");
+    if (!version || !freeformDirty || saving.current || busy) return;
+    if (domainDirty && !window.confirm(t("Saving Markdown will discard unsaved meeting detail edits. Continue?"))) return;
+    saving.current = true; setBusy(true); setMessage("");
     try {
       const data = await bridgeCall<{ versionId: string }>("minutes.edit", {
         meetingId, versionId: selectedVersion, content: { ...version.content, user_text: editBody },
       });
-      await refresh(); setSelectedVersion(data.versionId);
-      setMessage("New minutes version saved.");
-    } catch { setMessage("Could not save the minutes edit."); }
-    finally { setBusy(false); }
+      if (currentMeeting.current !== meetingId) return;
+      setSelectedVersion(data.versionId); setMessage("New minutes version saved.");
+      try { await refresh(); } catch { setMessage("Minutes saved, but the list could not refresh. Reopen this meeting to view them."); }
+    } catch { if (currentMeeting.current === meetingId) setMessage("Could not save the minutes edit."); }
+    finally { saving.current = false; if (currentMeeting.current === meetingId) setBusy(false); }
   }
 
   async function saveDomain(content: DomainContent) {
-    if (!version) return;
-    setBusy(true); setMessage("");
+    if (!version || saving.current || busy) return;
+    if (freeformDirty && !window.confirm(t("Saving meeting details will discard unsaved Markdown edits. Continue?"))) return;
+    if (content.user_text !== undefined && !window.confirm(t("Saving meeting details will replace the saved Markdown body with the structured details. Continue?"))) return;
+    const structuredContent = structuredClone(content);
+    delete structuredContent.user_text;
+    saving.current = true; setBusy(true); setMessage("");
     try {
       const data = await bridgeCall<{ versionId: string }>("minutes.editDomain", {
-        meetingId, versionId: selectedVersion, content,
+        meetingId, versionId: selectedVersion, content: structuredContent,
       });
-      await refresh(); setSelectedVersion(data.versionId);
-      setMessage("Minutes edits saved as a new version.");
-    } catch { setMessage("Could not save the domain minutes. Check the date, claims and source citations."); }
-    finally { setBusy(false); }
+      if (currentMeeting.current !== meetingId) return;
+      setSelectedVersion(data.versionId); setMessage("Minutes edits saved as a new version.");
+      try { await refresh(); } catch { setMessage("Minutes saved, but the list could not refresh. Reopen this meeting to view them."); }
+    } catch { if (currentMeeting.current === meetingId) setMessage("Could not save the domain minutes. Check the date, claims and source citations."); }
+    finally { saving.current = false; if (currentMeeting.current === meetingId) setBusy(false); }
+  }
+
+  async function selectVersion(nextVersion: string) {
+    if (!nextVersion || nextVersion === selectedVersion || busy) return;
+    if (dirty && !window.confirm(t("Discard unsaved minutes edits?"))) return;
+    setBusy(true);
+    try {
+      await bridgeCall("minutes.select", { meetingId, versionId: nextVersion });
+      if (currentMeeting.current === meetingId) setSelectedVersion(nextVersion);
+    } catch { if (currentMeeting.current === meetingId) setMessage("Could not select this minutes version."); }
+    finally { if (currentMeeting.current === meetingId) setBusy(false); }
   }
 
   async function chooseMeetingType(nextType: string) {
@@ -213,8 +338,9 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       const data = await bridgeCall<{ versionId: string }>("minutes.setType", {
         meetingId, versionId: selectedVersion, meetingType: nextType,
       });
-      await refresh(); setSelectedVersion(data.versionId); setMeetingType(nextType);
+      setSelectedVersion(data.versionId); setMeetingType(nextType);
       setMessage("Meeting type saved as a new version.");
+      try { await refresh(); } catch { setMessage("Minutes saved, but the list could not refresh. Reopen this meeting to view them."); }
     } catch { setMessage("Could not change the meeting type."); }
     finally { setBusy(false); }
   }
@@ -222,8 +348,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
   async function exportMinutes(format: "copy" | "markdown" | "word") {
     if (!selectedVersion) return;
     if (dirty) {
-      if (!window.confirm(t("Discard unsaved minutes edits and use the saved version? Cancel to save a new version first."))) return;
-      setEditBody(savedBody); setEditing(false);
+      if (!window.confirm(t("Use the saved minutes? Your unsaved edits will remain."))) return;
     }
     try {
       if (format === "copy") {
@@ -258,14 +383,16 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
 
   async function confirmSend() {
     if (!preview) return;
+    if (dirty && !window.confirm(t("Discard unsaved minutes edits before generating a new version?"))) return;
     const id = preview.previewId;
     setBusy(true); setMessage("");
     try {
       await bridgeCall("cloud.confirm", { previewId: id, accepted: true });
       setPreview(null);
       const data = await bridgeCall<{ versionId: string }>("cloud.send", { previewId: id, meetingType });
-      await refresh(); setSelectedVersion(data.versionId);
+      setSelectedVersion(data.versionId);
       setMessage("Provider minutes saved.");
+      try { await refresh(); } catch { setMessage("Minutes saved, but the list could not refresh. Reopen this meeting to view them."); }
     } catch { setPreview(null); setMessage("Provider request failed. Review a new preview before retrying."); }
     finally { setBusy(false); }
   }
@@ -279,11 +406,22 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
         <p>{t(localAI?.ready ? "Write the DENSO form with {model} on this device, with transcript citations."
           : "Create source-linked minutes from the saved transcript.", { model: localAI?.selectedModel || "" })}</p></div>
         <div className="minutes-create-controls">
-          <Button size="sm" disabled={busy || !segments.some((segment) => segment.text.trim())}
+          <Button size="sm" disabled={busy || (localAI?.ready === true && (localBlocked || localCheckpoint?.available === true)) || !segments.some((segment) => segment.text.trim())}
             onClick={() => void generateOffline()}><Sparkles size={15} /> {t(busy ? "Creating minutes…" : "Generate meeting minutes")}</Button>
           {localAI?.ready && <Button variant="secondary" size="sm" disabled={busy || !segments.some((segment) => segment.text.trim())}
             onClick={() => void generateOffline(meetingType, "extractive")}>{t("Create fast extractive draft")}</Button>}
         </div></div>
+      {localJob && ["running", "cancelling"].includes(localJob.state) &&
+        <Button variant="secondary" size="sm" disabled={localJob.state === "cancelling"} onClick={() => void cancelLocalJob()}>
+          {t(localJob.state === "cancelling" ? "Stopping AI…" : "Stop AI generation")}
+        </Button>}
+      {localCheckpoint?.available && !busy && <div className="minutes-create-controls">
+        <p className="hint" role="status">{t("Saved AI progress: {percent}%", { percent: Math.round(localCheckpoint.progress * 100) })}</p>
+        {localCheckpoint.error && <p role="alert">{t(localCheckpoint.error)}</p>}
+        <Button variant="secondary" size="sm" disabled={localBlocked || !!localCheckpoint.error || !localAI?.ready}
+          onClick={() => void generateOffline(localCheckpoint.meetingType || "general", "resume")}>{t("Resume AI generation")}</Button>
+        <Button variant="secondary" size="sm" disabled={localBlocked} onClick={() => void discardLocalCheckpoint()}>{t("Discard saved AI progress")}</Button>
+      </div>}
       {!segments.some((segment) => segment.text.trim()) && <p className="hint" role="status">{t("Transcribe this recording and save nonempty text before creating minutes.")}</p>}
       {localAI && !localAI.ready && <p className="hint" role="status">{t(localAI.connected
         ? "Install a local language model in Models for semantic summaries. The current button creates an extractive draft."
@@ -297,7 +435,7 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
             onChange={(event) => setMeetingType(event.target.value)}>
             {MEETING_TYPES.map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}
           </NativeSelect>
-          <Button variant="secondary" size="sm" disabled={busy || !segments.some((segment) => segment.text.trim())}
+          <Button variant="secondary" size="sm" disabled={busy || (localAI?.ready === true && (localBlocked || localCheckpoint?.available === true)) || !segments.some((segment) => segment.text.trim())}
             onClick={() => void generateOffline(meetingType)}>{t("Create minutes for this meeting type")}</Button></div>
         {savedMeetingType && meetingType !== savedMeetingType && <div className="minutes-type-update">
           <p>{t("This type is used for specialized drafts.")}</p>
@@ -318,34 +456,28 @@ export function MinutesPanel({ meetingId, privacyMode, onPrivacyChange, onSeek, 
       </details>
     </section>
     <div className="minutes-version-group"><div className="minutes-version-control"><Label htmlFor="minutes-version">{t("Saved version")}</Label>
-      <NativeSelect id="minutes-version" value={selectedVersion} onChange={(event) => {
-        if (dirty && !window.confirm(t("Discard unsaved minutes edits?"))) return;
-        const nextVersion = event.target.value;
-        if (!nextVersion) return;
-        const previousVersion = selectedVersion;
-        setSelectedVersion(nextVersion);
-        void bridgeCall("minutes.select", { meetingId, versionId: nextVersion })
-          .catch(() => { setSelectedVersion(previousVersion); setMessage("Could not select this minutes version."); });
-      }}><option value="" disabled={versions.length > 0}>{t("No minutes yet")}</option>
+      <NativeSelect id="minutes-version" value={selectedVersion} disabled={busy}
+        onChange={(event) => void selectVersion(event.target.value)}><option value="" disabled={versions.length > 0}>{t("No minutes yet")}</option>
         {versions.map((item) => <option key={item.version_id} value={item.version_id}>{formatDateTime(item.created_at, language)} · {t(item.origin)}</option>)}
       </NativeSelect></div>
       {version && <div className="minutes-version-meta"><span>{t(versionSourceLabel(version.manifest))}</span></div>}
     </div>
     {version && <p className="minutes-action-note">{t("Any action items in these minutes are suggestions, not assigned or tracked tasks.")}</p>}
     {!version && <div className="empty-document">{t("Create minutes from a saved transcript.")}</div>}
-    {version && (editing ? <Textarea className="minutes-editor" aria-label={t("Edit minutes Markdown")} value={editBody} onChange={(event) => setEditBody(event.target.value)} />
-      : <article className="markdown-body"><MinutesMarkdown source={savedBody} /></article>)}
+    {version && (editing ? <Textarea className="minutes-editor" aria-label={t("Edit minutes Markdown")} disabled={busy} value={editBody} onChange={(event) => setEditBody(event.target.value)} />
+      : <article className="markdown-body"><MinutesMarkdown source={editBody} /></article>)}
     {version && (version.content as unknown as DomainContent).domain && <details className="minutes-structured-editor">
       <summary>{t("Edit meeting details and notes")}</summary>
       <DomainMinutesReview key={selectedVersion} content={version.content as unknown as DomainContent} drift={sourceDrift} busy={busy}
         onSave={saveDomain} onDirtyChange={setDomainDirty} onSeek={onSeek} onOpenSource={onOpenSource} />
     </details>}
     {version && <div className="document-footer">
-      <Button variant="secondary" size="sm" onClick={() => setEditing((value) => !value)}>{t(editing ? "Preview" : "Edit")}</Button>
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => setEditing((value) => !value)}>{t(editing ? "Preview" : "Edit")}</Button>
       <Button size="sm" disabled={!freeformDirty || busy} onClick={() => void saveEdit()}><Save size={15} /> {t("Save new version")}</Button>
-      <Button variant="secondary" size="sm" onClick={() => void exportMinutes("copy")}><Copy size={15} /> {t("Copy Markdown")}</Button>
-      <Button variant="secondary" size="sm" onClick={() => void exportMinutes("markdown")}><Download size={15} /> {t("Export MD")}</Button>
-      <Button variant="secondary" size="sm" onClick={() => void exportMinutes("word")}><Download size={15} /> {t("Export Word (.docx)")}</Button>
+      {freeformDirty && <Button variant="secondary" size="sm" disabled={busy} onClick={() => { setEditBody(savedBody); setEditing(false); }}>{t("Discard Markdown changes")}</Button>}
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void exportMinutes("copy")}><Copy size={15} /> {t("Copy Markdown")}</Button>
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void exportMinutes("markdown")}><Download size={15} /> {t("Export MD")}</Button>
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void exportMinutes("word")}><Download size={15} /> {t("Export Word (.docx)")}</Button>
       {dirty && <span className="dirty-label">{t("Unsaved edits")}</span>}</div>}
     <div className="cloud-section"><div className="cloud-header"><ShieldCheck size={19} /><div><h2>{t("Optional provider draft")}</h2><p>{t("Only selected, reviewed transcript segments are sent after you confirm the exact payload.")}</p></div></div>
       <div className="cloud-privacy"><span className="subheading">{t("Privacy classification")}</span>

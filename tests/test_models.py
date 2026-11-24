@@ -1,12 +1,18 @@
 import json
+import multiprocessing
 import socket
+import threading
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from test_shared_file_lock import _hold_lock
 from tokenizers import Tokenizer, models
 
 from fahmm import models as model_module
 from fahmm.models import InstalledModel, ModelManager, validate_model_dir
+from fahmm.shared_file_lock import SharedFileLock, live_model_lock_path
 
 
 def make_bundle(path):
@@ -137,3 +143,116 @@ def test_custom_repository_rejection_and_safe_model_deletion(tmp_path, monkeypat
     manager.delete(model_id)
     assert manager.installed() == []
     assert meeting_file.read_bytes() == b"meeting data"
+
+
+def test_model_delete_rejects_live_process_until_shared_lock_is_released(tmp_path, monkeypatch):
+    manager = ModelManager(tmp_path / "models")
+    model_id = uuid.uuid4().hex
+    path = manager._path(model_id)
+    make_bundle(path)
+    manager._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, path))
+    lock_path = live_model_lock_path(manager.root, model_id)
+    lock_path.write_bytes(b"stable model lock")
+    index_before = (manager.root / "index.json").read_bytes()
+    context = multiprocessing.get_context("spawn")
+    ready, release, finished = (context.Event() for _ in range(3))
+    holder = context.Process(
+        target=_hold_lock, args=(str(lock_path), True, ready, release, finished)
+    )
+    holder.start()
+    try:
+        assert ready.wait(10)
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match="in use by live transcription"):
+            manager.delete(model_id)
+        assert time.monotonic() - started < 2
+        assert path.exists() and (manager.root / "index.json").read_bytes() == index_before
+        assert not (manager.root / "trash" / model_id).exists()
+        release.set()
+        holder.join(timeout=10)
+        assert holder.exitcode == 0 and finished.is_set()
+        original_rmtree = model_module.shutil.rmtree
+
+        def verify_lock_during_removal(target, *args, **kwargs):
+            if target == manager.root / "trash" / model_id:
+                with pytest.raises(TimeoutError):
+                    SharedFileLock(lock_path, shared=True).acquire(timeout=0)
+            return original_rmtree(target, *args, **kwargs)
+
+        monkeypatch.setattr(model_module.shutil, "rmtree", verify_lock_during_removal)
+        manager.delete(model_id)
+        assert not path.exists() and not manager.installed()
+        assert lock_path.read_bytes() == b"stable model lock"
+    finally:
+        if holder.is_alive():
+            release.set()
+            holder.join(timeout=5)
+            if holder.is_alive():
+                holder.terminate()
+                holder.join(timeout=5)
+
+
+def test_model_use_counts_are_shared_and_delete_waits_for_all_workers(tmp_path):
+    root = tmp_path / "models"
+    manager = ModelManager(root)
+    first_manager = ModelManager(root)
+    second_manager = ModelManager(root)
+    model_id = uuid.uuid4().hex
+    path = manager._path(model_id)
+    make_bundle(path)
+    manager._register(InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, path))
+    ready = threading.Barrier(3)
+    release_first = threading.Event()
+    release_second = threading.Event()
+
+    def use_model(owner, release):
+        owner.begin_use(model_id)
+        try:
+            ready.wait(timeout=10)
+            if not release.wait(timeout=10):
+                raise TimeoutError("Test did not release the model")
+        finally:
+            owner.end_use(model_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(use_model, first_manager, release_first)
+        second = pool.submit(use_model, second_manager, release_second)
+        try:
+            ready.wait(timeout=10)
+            with pytest.raises(RuntimeError, match="in use"):
+                manager.delete(model_id)
+            release_first.set()
+            first.result(timeout=10)
+            with pytest.raises(RuntimeError, match="in use"):
+                manager.delete(model_id)
+            assert path.exists()
+            release_second.set()
+            second.result(timeout=10)
+        finally:
+            release_first.set()
+            release_second.set()
+    manager.delete(model_id)
+    assert not path.exists()
+
+
+def test_model_use_counts_are_scoped_to_model_root(tmp_path):
+    first = ModelManager(tmp_path / "first")
+    second = ModelManager(tmp_path / "second")
+    model_id = uuid.uuid4().hex
+    for manager in (first, second):
+        path = manager._path(model_id)
+        make_bundle(path)
+        manager._register(
+            InstalledModel(model_id, "test/whisper", "test", "MIT", "a" * 40, 20, path)
+        )
+    first.end_use(model_id)  # Releasing an unused model remains a no-op.
+    first.begin_use(model_id)
+    first.begin_use(model_id)
+    first.end_use(model_id)  # The first completion cannot release the second use.
+    same_root = ModelManager(first.root)
+    same_root.end_use(model_id)  # A different manager cannot release this use.
+    second.delete(model_id)
+    with pytest.raises(RuntimeError, match="in use"):
+        first.delete(model_id)
+    first.end_use(model_id)
+    first.delete(model_id)

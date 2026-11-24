@@ -1,4 +1,5 @@
 import json
+import sys
 import uuid
 
 import pytest
@@ -38,6 +39,19 @@ def sample_content(run_id, text="Đã thống nhất thử nghiệm."):
             }
         ],
     }
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows path length regression")
+def test_version_staging_works_in_deep_windows_meeting_folder(tmp_path):
+    if len(str(tmp_path)) > 110:
+        pytest.skip("The test's temporary root is already too deep")
+    root = tmp_path / ("x" * max(1, 100 - len(str(tmp_path)) - 1))
+    meetings, meeting_id, run_id = make_meeting_with_run(root)
+    store = MinutesStore(meetings)
+    version = store.save_version(
+        meeting_id, run_id, "extractive", sample_content(run_id), "default"
+    )
+    assert store.read_version(meeting_id, version)["manifest"]["run_id"] == run_id
 
 
 def test_versions_approval_edits_and_reopen_preserve_content(tmp_path):
