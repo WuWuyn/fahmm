@@ -3,7 +3,8 @@ import { AudioLines, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } 
 import { AudioPlayer } from "./AudioPlayer";
 import { MinutesPanel } from "@/features/minutes/MinutesPanel";
 import { TranscriptPanel } from "@/features/transcript/TranscriptPanel";
-import { bridgeCall, demoAudioAvailable, importAudio, importDemoAudio } from "@/shared/bridge/client";
+import { bridgeCall, demoAudioAvailable, discardDroppedAudio, importAudio, importDemoAudio, importDroppedAudio, listenAudioDrag } from "@/shared/bridge/client";
+import type { AudioDragEvent } from "@/shared/bridge/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -41,6 +42,8 @@ export function Meetings({ backendReady, onDirtyChange, visible = true, openMeet
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
   const [minutesDirty, setMinutesDirty] = useState(false);
   const [transcriptDirty, setTranscriptDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = minutesDirty || transcriptDirty;
   const [requestedRun, setRequestedRun] = useState<{ runId: string; nonce: number } | null>(null);
   useEffect(() => { onDirtyChange?.(minutesDirty || transcriptDirty); }, [minutesDirty, transcriptDirty, onDirtyChange]);
   const allowMeetingChange = () => !(minutesDirty || transcriptDirty) ||
@@ -50,6 +53,12 @@ export function Meetings({ backendReady, onDirtyChange, visible = true, openMeet
   const [message, setMessage] = useState("");
   const [demoAvailable, setDemoAvailable] = useState(false);
   const [demoImporting, setDemoImporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [dragAvailable, setDragAvailable] = useState<boolean | null>(null);
+  const importingRef = useRef(false);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const dragHandlerRef = useRef<(event: AudioDragEvent) => void>(() => {});
   const [cleanup, setCleanup] = useState<{ deletions: string[]; imports: string[] }>({ deletions: [], imports: [] });
 
   const refreshCleanup = useCallback(async () => {
@@ -91,6 +100,10 @@ export function Meetings({ backendReady, onDirtyChange, visible = true, openMeet
 
   async function showImportedMeeting(meetingId: string) {
     await refresh();
+    if (dirtyRef.current && !window.confirm(t("Discard unsaved transcript and minutes edits before changing meetings?"))) {
+      setMessage("Audio imported. Save or discard your edits before opening it.");
+      return;
+    }
     setQuery("");
     setMinutesDirty(false); setTranscriptDirty(false); setRequestedRun(null);
     setSelectedId(meetingId);
@@ -101,24 +114,59 @@ export function Meetings({ backendReady, onDirtyChange, visible = true, openMeet
   }
 
   async function addMeeting() {
-    if (!allowMeetingChange()) return;
+    if (importingRef.current) return;
     setMessage("");
+    importingRef.current = true; setImporting(true);
     try {
       const result = await importAudio();
       if (result.meetingId) await showImportedMeeting(result.meetingId);
     } catch { setMessage("Could not import audio. Choose a supported WAV, MP3, M4A, or FLAC file."); }
+    finally { importingRef.current = false; setImporting(false); }
   }
 
   async function addDemoMeeting() {
-    if (!allowMeetingChange()) return;
+    if (importingRef.current) return;
     setMessage("");
+    importingRef.current = true; setImporting(true);
     setDemoImporting(true);
     try {
       const result = await importDemoAudio();
       await showImportedMeeting(result.meetingId);
     } catch { setMessage("Could not add the sample recording. Check the local demo file and try again."); }
-    finally { setDemoImporting(false); }
+    finally { importingRef.current = false; setImporting(false); setDemoImporting(false); }
   }
+
+  dragHandlerRef.current = (event) => {
+    if (event.type === "leave") { setDragActive(false); return; }
+    const rect = dropZoneRef.current?.getBoundingClientRect();
+    const scale = window.devicePixelRatio || 1;
+    const inside = !!rect && event.x / scale >= rect.left && event.x / scale <= rect.right &&
+      event.y / scale >= rect.top && event.y / scale <= rect.bottom;
+    if (event.type !== "drop") {
+      setDragActive(visible && backendReady && !importingRef.current && inside);
+      return;
+    }
+    setDragActive(false);
+    const discard = () => { if (event.token !== undefined) void discardDroppedAudio(event.token).catch(() => {}); };
+    if (!visible || !inside || !backendReady || importingRef.current) { discard(); return; }
+    if (event.error || event.token === undefined) {
+      setMessage(event.error === "multiple" ? "Drop one audio file at a time." : "Unsupported file. Use WAV, MP3, M4A, or FLAC.");
+      discard(); return;
+    }
+    const token = event.token;
+    setMessage(""); importingRef.current = true; setImporting(true);
+    void importDroppedAudio(token).then((result) => showImportedMeeting(result.meetingId))
+      .catch(() => setMessage("Could not import audio. Choose a supported WAV, MP3, M4A, or FLAC file."))
+      .finally(() => { importingRef.current = false; setImporting(false); });
+  };
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listenAudioDrag((event) => dragHandlerRef.current(event)).then((stop) => {
+      if (disposed) stop?.(); else { unlisten = stop ?? undefined; setDragAvailable(!!stop); }
+    }).catch(() => { if (!disposed) setDragAvailable(false); });
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
 
   async function deleteMeeting(meeting: Meeting) {
     if (!window.confirm(t("Delete '{name}' and its fahmm audio, transcripts, minutes, and metadata? This cannot be undone. Exports and backups remain.", { name: meeting.name }))) return;
@@ -162,11 +210,16 @@ export function Meetings({ backendReady, onDirtyChange, visible = true, openMeet
   return <section className="page meetings-page" aria-labelledby="meetings-heading">
     <div className="meetings-layout"><aside className="meeting-list" aria-label={t("Saved meetings")}>
       <div className="meeting-list-header"><h1 id="meetings-heading">{t("Meetings")}</h1><span className="count-badge">{meetings.length}</span></div>
-      <Button variant="outline" className="meeting-import" disabled={!backendReady} onClick={() => void addMeeting()}><Plus size={19} /> {t("Import audio")}</Button>
+      <div ref={dropZoneRef} role="region" aria-label={t("Audio import drop area")}
+        className={`meeting-import-zone${dragActive ? " is-drag-active" : ""}${!backendReady || importing ? " is-disabled" : ""}`}>
+        <Button variant="outline" className="meeting-import" disabled={!backendReady || importing}
+          aria-describedby="meeting-import-help" onClick={() => void addMeeting()}><Plus size={19} /> {t(importing && !demoImporting ? "Importing audio…" : "Import audio")}</Button>
+        <p id="meeting-import-help">{t(dragAvailable === false ? "Drag and drop unavailable. Use Import audio." : dragActive ? "Release to import one audio file" : "Or drag one WAV, MP3, M4A, or FLAC file here")}</p>
+      </div>
       {demoAvailable && <div className="meeting-demo">
         <strong><AudioLines size={17} aria-hidden="true" />{t("Sample meeting · 60 min")}</strong>
         <p>{t("Fictional retail requirements, read by one synthetic Vietnamese voice.")}</p>
-        <Button variant="secondary" size="sm" disabled={!backendReady || demoImporting} onClick={() => void addDemoMeeting()}>
+        <Button variant="secondary" size="sm" disabled={!backendReady || importing} onClick={() => void addDemoMeeting()}>
           {demoImporting ? t("Adding sample…") : t("Use sample recording")}
         </Button>
       </div>}

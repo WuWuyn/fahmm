@@ -27,12 +27,18 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/fahmm-sidecar"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons-fahmm/icon.ico",
+        "uninstallerIcon": "icons-fahmm/icon.ico"
+      }
+    },
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons-fahmm/32x32.png",
+      "icons-fahmm/128x128.png",
+      "icons-fahmm/128x128@2x.png",
+      "icons-fahmm/icon.icns",
+      "icons-fahmm/icon.ico"
     ]
   }
 }

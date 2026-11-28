@@ -1,13 +1,14 @@
 pub mod protocol;
 pub mod sidecar;
 pub mod media;
+mod audio_drop;
 
 use serde_json::{Value, json};
 use sidecar::{SidecarSupervisor, application_spec};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 struct BackendState(Mutex<Option<SidecarSupervisor>>);
@@ -122,6 +123,50 @@ async fn bridge_import(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn bridge_import_dropped(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    token: u32,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("INVALID_REQUEST".into());
+    }
+    let path = app.state::<audio_drop::AudioDropState>().take(token).ok_or("INVALID_REQUEST")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        if !path.is_file() {
+            return Err("INVALID_REQUEST".into());
+        }
+        let path = path.to_str().ok_or("INVALID_REQUEST")?;
+        call_backend(&app, "meeting.import", json!({"nativePath": path}))
+    }).await.map_err(|_| "BACKEND_UNAVAILABLE".to_string())?
+}
+
+#[tauri::command]
+fn bridge_discard_dropped(window: tauri::Window, state: tauri::State<'_, audio_drop::AudioDropState>, token: u32) {
+    if window.label() == "main" {
+        state.discard(token);
+    }
+}
+
+fn forward_audio_drag(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if window.label() != "main" { return; }
+    let tauri::WindowEvent::DragDrop(event) = event else { return };
+    let payload = match event {
+        tauri::DragDropEvent::Enter { position, .. } => json!({"type":"enter", "x":position.x, "y":position.y}),
+        tauri::DragDropEvent::Over { position } => json!({"type":"over", "x":position.x, "y":position.y}),
+        tauri::DragDropEvent::Leave => json!({"type":"leave"}),
+        tauri::DragDropEvent::Drop { paths, position } => {
+            match window.state::<audio_drop::AudioDropState>().register(paths) {
+                Ok(token) => json!({"type":"drop", "x":position.x, "y":position.y, "token":token}),
+                Err(reason) => json!({"type":"drop", "x":position.x, "y":position.y, "error":reason}),
+            }
+        },
+        _ => return,
+    };
+    let _ = window.emit("fahmm://audio-drag", payload);
+}
+
+#[tauri::command]
 async fn bridge_export(app: tauri::AppHandle, meeting_id: String, document_id: String,
                        document_kind: String) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -212,8 +257,10 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .manage(BackendState(Mutex::new(backend)))
+        .manage(audio_drop::AudioDropState::default())
+        .on_window_event(forward_audio_drag)
         .invoke_handler(tauri::generate_handler![bridge_status, bridge_restart,
-            bridge_call, bridge_import, bridge_demo_status, bridge_import_demo, bridge_export,
+            bridge_call, bridge_import, bridge_import_dropped, bridge_discard_dropped, bridge_demo_status, bridge_import_demo, bridge_export,
             bridge_export_audio, bridge_report_import, bridge_report_export])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

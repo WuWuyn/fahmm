@@ -1,4 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+export type AudioDragEvent =
+  | { type: "enter" | "over"; x: number; y: number }
+  | { type: "leave" }
+  | { type: "drop"; x: number; y: number; token?: number; error?: string };
 
 export async function bridgeCall<T>(operation: string, params: Record<string, unknown> = {}): Promise<T> {
   if (!isTauri()) throw new Error("Desktop backend is available only in the Tauri app");
@@ -21,6 +27,19 @@ export async function restartBridge(): Promise<void> {
 
 export async function importAudio(): Promise<{ cancelled?: boolean; meetingId?: string }> {
   return invoke("bridge_import");
+}
+
+export async function listenAudioDrag(handler: (event: AudioDragEvent) => void): Promise<UnlistenFn | null> {
+  if (!isTauri()) return null;
+  return listen<AudioDragEvent>("fahmm://audio-drag", (event) => handler(event.payload));
+}
+
+export async function importDroppedAudio(token: number): Promise<{ meetingId: string }> {
+  return invoke("bridge_import_dropped", { token });
+}
+
+export async function discardDroppedAudio(token: number): Promise<void> {
+  await invoke("bridge_discard_dropped", { token });
 }
 
 export async function demoAudioAvailable(): Promise<boolean> {
